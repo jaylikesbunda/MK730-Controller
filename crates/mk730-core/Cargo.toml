@@ -1,0 +1,10 @@
+[package]
+name = "mk730-core"
+version = "0.1.0"
+edition = "2021"
+description = "Pure protocol core for Cooler Master MK730 / MasterKeys family (no system deps)"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

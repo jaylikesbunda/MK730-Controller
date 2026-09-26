@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    name: core test + check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: core tests
+        run: cargo test -p mk730-core --verbose
+      - name: backend check
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libusb-1.0-0-dev libudev-dev
+          cargo check --manifest-path src-tauri/Cargo.toml --verbose
+      - name: frontend smoke
+        run: |
+          test -f frontend/index.html
+          test -f frontend/styles.css
+          test -f frontend/app.js
+          test -f src-tauri/tauri.conf.json
+          echo "frontend OK"
+
+  build-matrix:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: system deps (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libusb-1.0-0-dev libudev-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: install tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+      - name: backend tests
+        run: cargo test -p mk730-core
+      - name: tauri build (no bundle for CI speed)
+        run: cargo tauri build --no-bundle --verbose

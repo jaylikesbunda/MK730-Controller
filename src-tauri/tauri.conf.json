@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MK730 Controller",
+  "version": "0.1.0",
+  "identifier": "com.mk730.controller",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MK730 Controller",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 980,
+        "minHeight": 620,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.ico", "icons/icon.icns", "icons/icon.png"],
+    "category": "Utility",
+    "shortDescription": "Open-source MK730 controller",
+    "longDescription": "Lighting, effects, profiles and macros for Cooler Master MK730 without proprietary software."
+  }
+}

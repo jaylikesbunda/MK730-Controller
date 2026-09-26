@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MK730 Controller</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="window">
+  <!-- custom top bar -->
+  <header id="titlebar" data-tauri-drag-region>
+    <div class="tb-left" data-tauri-drag-region>
+      <div class="logo">MK</div>
+      <div class="tb-title" data-tauri-drag-region>
+        <strong>MK730 Controller</strong>
+        <span id="conn-pill" class="pill demo">demo</span>
+      </div>
+    </div>
+    <nav class="tabs" data-tauri-drag-region>
+      <button class="tab active" data-tab="lighting">Lighting</button>
+      <button class="tab" data-tab="effects">Effects</button>
+      <button class="tab" data-tab="profiles">Profiles</button>
+      <button class="tab" data-tab="macros">Macros</button>
+      <button class="tab" data-tab="device">Device</button>
+    </nav>
+    <div class="tb-controls">
+      <button id="btn-min" class="wbtn" title="Minimize"><svg viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+      <button id="btn-max" class="wbtn" title="Maximize"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button id="btn-close" class="wbtn close" title="Close"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    </div>
+  </header>
+
+  <main id="content">
+    <!-- LIGHTING -->
+    <section id="tab-lighting" class="panel active">
+      <div class="grid2">
+        <div class="card">
+          <div class="card-h"><h2>Keyboard</h2><span class="hint">click a key to paint it</span></div>
+          <div id="kbd"></div>
+          <div id="bars"></div>
+          <div class="row">
+            <input type="color" id="pick" value="#7c3aed" />
+            <button id="btn-fill" class="btn primary">Fill all</button>
+            <button id="btn-apply-map" class="btn">Push colormap to device</button>
+            <button id="btn-clear" class="btn ghost">Clear</button>
+          </div>
+          <div class="row small">
+            <label>Brightness <input type="range" id="bright" min="10" max="100" value="100" /></label>
+            <span id="bright-v">100%</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>Quick</h2></div>
+          <div class="swatches" id="swatches"></div>
+          <div class="row"><button class="btn" data-c="#ffffff">White</button><button class="btn" data-c="#7c3aed">Violet</button><button class="btn" data-c="#06b6d4">Cyan</button><button class="btn" data-c="#22c55e">Green</button><button class="btn" data-c="#ef4444">Red</button><button class="btn" data-c="#000000">Off</button></div>
+          <h3>Log</h3>
+          <pre id="log" class="log"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- EFFECTS -->
+    <section id="tab-effects" class="panel">
+      <div class="grid2">
+        <div class="card">
+          <div class="card-h"><h2>Hardware effect</h2><span class="hint">51 28 / 51 2c</span></div>
+          <label>Effect<select id="fx"></select></label>
+          <label>Speed (10 fast – 50 slow)<input type="range" id="fx-p1" min="10" max="50" value="32" /><span id="fx-p1-v">32</span></label>
+          <label>Direction / mode (p2)<select id="fx-p2"><option value="0">0x00 default / L→R</option><option value="2">0x02 back→front</option><option value="4">0x04 R→L</option><option value="6">0x06 front→back</option><option value="128">0x80 ripple random</option></select></label>
+          <label>Intensity (p3)<input type="range" id="fx-p3" min="10" max="50" value="32" /><span id="fx-p3-v">32</span></label>
+          <div class="row"><label>Color 1 <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Color 2 <input type="color" id="fx-c2" value="#000000" /></label></div>
+          <div class="row"><button id="btn-fx-apply" class="btn primary">Apply effect</button></div>
+        </div>
+        <div class="card"><div class="card-h"><h2>Notes</h2></div><p class="muted">Effects run on firmware (mode <code>41 01</code>). Manual paint uses <code>41 02 + c0</code>. Switching is automatic. Save to P1–P5 from Profiles tab (<code>50 55</code>).</p><p class="muted">Wave directions: 00 L→R, 04 R→L, 02 B→F, 06 F→B. Ripple 0x80 = random color per press.</p></div>
+      </div>
+    </section>
+
+    <!-- PROFILES -->
+    <section id="tab-profiles" class="panel">
+      <div class="grid2">
+        <div class="card"><div class="card-h"><h2>On-board P1–P5</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save active to firmware (50 55)</button></div></div>
+        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Export JSON</button><label class="btn ghost">Import JSON<input type="file" id="file-import" accept=".json" hidden /></label></div><textarea id="prof-json" rows="14" spellcheck="false"></textarea><div class="row"><button id="btn-apply-profile" class="btn primary">Apply selected to device</button></div></div>
+      </div>
+    </section>
+
+    <!-- MACROS -->
+    <section id="tab-macros" class="panel">
+      <div class="grid2">
+        <div class="card"><div class="card-h"><h2>Macros</h2><span class="hint">local-first, FW pending RE</span></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Trigger e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div><p class="muted">Firmware macro encoding is not yet RE'd (see Device → RE guide). Macros store locally and are fully editable so captures can be tied to a trigger.</p></div>
+        <div class="card"><div class="card-h"><h2>Editor</h2></div><input id="m-name" placeholder="Macro name" /><label>Keys (one HID per line: <code>0x04 pressed 120ms</code>)<textarea id="m-events" rows="10" placeholder="0x04 down 0&#10;0x04 up 120"></textarea></label><div class="row"><button id="btn-m-save" class="btn primary">Save macro</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label><span id="m-fw" class="pill">local_only</span></div></div>
+      </div>
+    </section>
+
+    <!-- DEVICE -->
+    <section id="tab-device" class="panel">
+      <div class="grid2">
+        <div class="card"><div class="card-h"><h2>Connection</h2><button id="btn-scan" class="btn">Rescan</button></div><div id="devs"></div><div class="row"><button id="btn-mode-fw" class="btn">41 00 firmware</button><button id="btn-mode-fx" class="btn">41 01 effect</button><button id="btn-mode-man" class="btn">41 02 manual</button><button id="btn-mode-prof" class="btn">41 03 profile</button></div></div>
+        <div class="card"><div class="card-h"><h2>RE & setup</h2></div><pre class="log">Linux:
+  lsusb -v -d 2512:
+  sudo cp udev/99-mk730.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+  Wireshark + usbmon, filter usb.idVendor==0x2512
+
+Windows:
+  Wireshark + USBPcap, Portal in VM or host
+  Bind Interface 1 to WinUSB only if needed (Zadig), keep IF0 HID.
+
+Calibrate keymap: see docs/RE_MACROS.md (record tool pattern).
+Macros: capture macro create/assign/delete in Portal, attach pcapng.</pre></div>
+      </div>
+    </section>
+  </main>
+
+  <footer id="statusbar"><span id="status">boot…</span><span id="ver">v0.1.0</span></footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
