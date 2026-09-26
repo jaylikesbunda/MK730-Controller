@@ -44,7 +44,31 @@ struct AppState {
     initialized: Mutex<bool>,
 }
 
+fn log_path() -> std::path::PathBuf {
+    std::env::temp_dir().join("mk730-controller.log")
+}
+
+/// Append to a plain-text log in %TEMP% so behaviour can be inspected without
+/// the app UI (useful when the window looks frozen).
+fn file_log(msg: &str) {
+    use std::io::Write;
+    let p = log_path();
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let _ = writeln!(f, "{} {}", chrono_stamp(), msg);
+    }
+}
+
+fn chrono_stamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    format!("[{:.3}]", d)
+}
+
 fn push_log(state: &State<AppState>, msg: String) {
+    file_log(&msg);
     let mut d = state.dev.lock();
     d.log.push(msg);
     if d.log.len() > 300 {
@@ -93,61 +117,60 @@ fn friendly_name(pid: u16) -> &'static str {
     }
 }
 
-#[tauri::command]
-fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo> {
+/// Scan for Cooler Master keyboards. Returns one entry per physical device
+/// plus a summary string of every CM collection seen.
+fn probe_devices() -> Vec<mk730_core::transport::DeviceInfo> {
     use std::collections::HashMap;
     let mut found = Vec::new();
-    let mut hid_total = 0usize;
+    let mut seen: HashMap<String, mk730_core::transport::DeviceInfo> = HashMap::new();
     let mut cm_any: Vec<String> = Vec::new();
-    // hidapi lists each HID collection separately, so one keyboard appears
-    // 4-6 times (typing, media keys, vendor control...). Group by physical
-    // device (vid+pid+serial) and show one row.
+    let mut hid_total = 0usize;
+
     if let Ok(api) = hidapi::HidApi::new() {
-        let mut seen: HashMap<String, mk730_core::transport::DeviceInfo> = HashMap::new();
         for dev in api.device_list() {
             hid_total += 1;
             if SUPPORTED_VIDS.contains(&dev.vendor_id()) {
                 let pid = dev.product_id();
                 let iface_raw = dev.interface_number();
                 let iface = if iface_raw < 0 { 255u8 } else { iface_raw as u8 };
-                cm_any.push(format!("{:04x} if{}", pid, iface));
+                cm_any.push(format!("{:04x}/if{}/up{:04x}", pid, iface, dev.usage_page()));
                 let serial = dev.serial_number().unwrap_or("").to_string();
-                let key = format!("{:04x}:{:04x}:{}", dev.vendor_id(), pid, serial);
-                seen.entry(key).or_insert_with(|| {
-                    // Firmware sometimes reports the serial as product string on
-                    // one collection — always prefer the friendly PID name.
-                    mk730_core::transport::DeviceInfo {
-                        vid: dev.vendor_id(),
-                        pid,
-                        interface: 1,
-                        path: format!("{:?}", dev.path()),
-                        product: friendly_name(pid).to_string(),
-                        demo: false,
-                    }
+                // Fall back to the device path when collections report no serial,
+                // so every collection collapses into one row per keyboard.
+                let key = if serial.is_empty() {
+                    format!("{:04x}:{:04x}", dev.vendor_id(), pid)
+                } else {
+                    format!("{:04x}:{:04x}:{}", dev.vendor_id(), pid, serial)
+                };
+                seen.entry(key).or_insert_with(|| mk730_core::transport::DeviceInfo {
+                    vid: dev.vendor_id(),
+                    pid,
+                    interface: 1,
+                    path: String::from_utf8_lossy(dev.path().to_bytes_with_nul())
+                        .trim_end_matches('\0')
+                        .to_string(),
+                    product: friendly_name(pid).to_string(),
+                    demo: false,
                 });
             }
         }
         found.extend(seen.into_values());
     }
-    // rusb fallback probe: any device with CM VID, any PID.
-    let mut rusb_any: Vec<String> = Vec::new();
+
+    // rusb fallback for cases where hidapi is unavailable/blocked.
     if found.is_empty() {
         if let Ok(ctx) = rusb::Context::new() {
             if let Ok(list) = ctx.devices() {
                 for h in list.iter() {
                     if let Ok(desc) = h.device_descriptor() {
                         if SUPPORTED_VIDS.contains(&desc.vendor_id()) {
-                            rusb_any.push(format!("{:04x}", desc.product_id()));
+                            cm_any.push(format!("{:04x}/usb", desc.product_id()));
                             found.push(mk730_core::transport::DeviceInfo {
                                 vid: desc.vendor_id(),
                                 pid: desc.product_id(),
                                 interface: 1,
-                                path: format!(
-                                    "bus{:03}-dev{:03}",
-                                    h.bus_number(),
-                                    h.address()
-                                ),
-                                product: "Cooler Master keyboard".to_string(),
+                                path: format!("bus{:03}-dev{:03}", h.bus_number(), h.address()),
+                                product: friendly_name(desc.product_id()).to_string(),
                                 demo: false,
                             });
                         }
@@ -156,29 +179,31 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
             }
         }
     }
+
+    file_log(&format!(
+        "probe: hid_total={} cm=[{}] found={}",
+        hid_total,
+        cm_any.join(","),
+        found.len()
+    ));
+    found
+}
+
+#[tauri::command]
+fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo> {
+    let found = probe_devices();
+    let mut d = state.dev.lock();
+    d.connected = !found.is_empty();
+    d.demo = found.is_empty();
     if found.is_empty() {
-        push_log(
-            &state,
-            format!(
-                "list_devices: none with VID 2516 (hid_total={} rusb_cm={:?}) — demo",
-                hid_total, rusb_any
-            ),
-        );
+        drop(d);
+        push_log(&state, "list_devices: no keyboard, using demo state".to_string());
         return vec![demo_device()];
     }
-    {
-        let mut d = state.dev.lock();
-        d.connected = true;
-        d.demo = false;
-    }
+    drop(d);
     push_log(
         &state,
-        format!(
-            "list_devices: {} CM device(s) [{}] hid_total={}",
-            found.len(),
-            cm_any.join(","),
-            hid_total
-        ),
+        format!("list_devices: {} keyboard(s) connected", found.len()),
     );
     found
 }
@@ -552,15 +577,34 @@ pub fn run() {
     for p in Profile::default_set() {
         pmap.insert(p.id, p);
     }
+    let app_state = AppState {
+        dev: Mutex::new(DeviceState::default()),
+        profiles: Mutex::new(pmap),
+        macros: Mutex::new(HashMap::new()),
+        colors: Mutex::new([[0u8; 3]; 255]),
+        initialized: Mutex::new(false),
+    };
+    // Probe once at startup (no State wrapper available yet) so the first
+    // status read is accurate and failures are recorded.
+    file_log("=== app start ===");
+    {
+        let found = probe_devices();
+        let mut d = app_state.dev.lock();
+        d.connected = !found.is_empty();
+        d.demo = found.is_empty();
+        drop(d);
+        file_log(&format!(
+            "startup probe: {} device(s) found, demo={}",
+            found.len(),
+            found.is_empty()
+        ));
+        for f in &found {
+            file_log(&format!("  found {:04x}:{:04x} {}", f.vid, f.pid, f.product));
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState {
-            dev: Mutex::new(DeviceState::default()),
-            profiles: Mutex::new(pmap),
-            macros: Mutex::new(HashMap::new()),
-            colors: Mutex::new([[0u8; 3]; 255]),
-            initialized: Mutex::new(false),
-        })
+        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_status,
             list_devices,
