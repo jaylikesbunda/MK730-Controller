@@ -75,15 +75,34 @@ fn get_status(state: State<AppState>) -> Status {
     }
 }
 
+fn friendly_name(pid: u16) -> &'static str {
+    match pid {
+        0x008F => "MK730",
+        0x0067 => "MK750",
+        0x0069 => "MK850",
+        0x009F | 0x0147 => "CK530",
+        0x0145 | 0x007F => "CK550 / CK552",
+        0x0089 => "SK630",
+        0x008D => "SK650",
+        0x0149 | 0x014B => "SK622",
+        0x0157 | 0x0159 => "SK620",
+        0x015D => "SK652",
+        0x01AB => "SK653",
+        _ => "Cooler Master keyboard",
+    }
+}
+
 #[tauri::command]
 fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo> {
+    use std::collections::HashMap;
     let mut found = Vec::new();
     let mut hid_total = 0usize;
     let mut cm_any: Vec<String> = Vec::new();
-    // hidapi enumeration (works on Linux + Windows without claiming).
-    // NOTE: do NOT filter by PID here — MK730 PIDs vary by switch/layout and
-    // Windows reports each HID collection separately (interface may be -1).
+    // hidapi lists each HID collection separately, so one keyboard appears
+    // 4-6 times (typing, media keys, vendor control...). Group by physical
+    // device (vid+pid+serial) and show one row.
     if let Ok(api) = hidapi::HidApi::new() {
+        let mut seen: HashMap<String, mk730_core::transport::DeviceInfo> = HashMap::new();
         for dev in api.device_list() {
             hid_total += 1;
             if SUPPORTED_VIDS.contains(&dev.vendor_id()) {
@@ -91,19 +110,23 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
                 let iface_raw = dev.interface_number();
                 let iface = if iface_raw < 0 { 255u8 } else { iface_raw as u8 };
                 cm_any.push(format!("{:04x} if{}", pid, iface));
-                found.push(mk730_core::transport::DeviceInfo {
-                    vid: dev.vendor_id(),
-                    pid,
-                    interface: iface,
-                    path: format!("{:?}", dev.path()),
-                    product: dev
-                        .product_string()
-                        .unwrap_or("Cooler Master")
-                        .to_string(),
-                    demo: false,
+                let serial = dev.serial_number().unwrap_or("").to_string();
+                let key = format!("{:04x}:{:04x}:{}", dev.vendor_id(), pid, serial);
+                seen.entry(key).or_insert_with(|| {
+                    // Firmware sometimes reports the serial as product string on
+                    // one collection — always prefer the friendly PID name.
+                    mk730_core::transport::DeviceInfo {
+                        vid: dev.vendor_id(),
+                        pid,
+                        interface: 1,
+                        path: format!("{:?}", dev.path()),
+                        product: friendly_name(pid).to_string(),
+                        demo: false,
+                    }
                 });
             }
         }
+        found.extend(seen.into_values());
     }
     // rusb fallback probe: any device with CM VID, any PID.
     let mut rusb_any: Vec<String> = Vec::new();
