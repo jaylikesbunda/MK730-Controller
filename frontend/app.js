@@ -76,14 +76,25 @@ async function loadKeys(){
   bars.appendChild(brow);
 }
 
+let pushTimer = null;
+function schedulePush(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushFullMap, 160);
+}
+async function pushFullMap(){
+  const arr = Array.from({length:255},()=>[0,0,0]);
+  state.keys.forEach(k=>{
+    const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(state.colors[k.id]||"");
+    if(m && k.id<255) arr[k.id]=[+m[1],+m[2],+m[3]];
+  });
+  try{ await invoke("set_colormap",{colors:arr}); refreshStatus(); }catch(e){}
+}
 function paint(id,r,g,b){
   state.colors[id]=`rgb(${r},${g},${b})`;
-  invoke("set_key_color",{id,r,g,b}).then(refreshStatus).catch(()=>{});
-  loadKeysKeep();
-}
-function loadKeysKeep(){
-  $$("#kbd .key").forEach(()=>{});
+  // instant UI feedback, batched device push to avoid HID lag
+  const btns = $$("#kbd .key");
   loadKeys();
+  schedulePush();
 }
 
 // tabs

@@ -300,9 +300,9 @@ fn hid_send(state: &State<AppState>, payload: &[u8], label: &str) -> Result<Stri
     report[1..1 + n].copy_from_slice(&payload[..n]);
     dev.write(&report)
         .map_err(|e| CoreError::from(format!("write failed: {}", e)))?;
-    // Response is best-effort; some commands are write-only on this firmware.
+    // Response is best-effort; keep the wait short so painting stays fluid.
     let mut resp = [0u8; 65];
-    let _ = dev.read_timeout(&mut resp, 400);
+    let _ = dev.read_timeout(&mut resp, 60);
     push_log(state, format!("{} : {}", label, short));
     Ok(short)
 }
