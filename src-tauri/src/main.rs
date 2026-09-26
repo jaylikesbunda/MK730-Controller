@@ -508,6 +508,25 @@ fn apply_profile_to_device(
     Ok(h)
 }
 
+#[tauri::command]
+fn win_minimize(window: tauri::Window) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn win_toggle_maximize(window: tauri::Window) {
+    if window.is_maximized().unwrap_or(false) {
+        let _ = window.unmaximize();
+    } else {
+        let _ = window.maximize();
+    }
+}
+
+#[tauri::command]
+fn win_close(window: tauri::Window) {
+    window.close().ok();
+}
+
 pub fn run() {
     let mut pmap = HashMap::new();
     for p in Profile::default_set() {
@@ -524,6 +543,9 @@ pub fn run() {
             get_status,
             list_devices,
             debug_usb,
+            win_minimize,
+            win_toggle_maximize,
+            win_close,
             set_mode,
             set_full_color,
             set_key_color,

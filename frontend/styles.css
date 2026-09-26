@@ -21,7 +21,7 @@ body{
 #window{
   height:100vh;margin:0;
   background:linear-gradient(180deg,#12151c,#0f1115);
-  border:1px solid var(--line);border-radius:14px;
+  border:none;border-radius:14px;
   display:flex;flex-direction:column;overflow:hidden;
 }
 #titlebar{

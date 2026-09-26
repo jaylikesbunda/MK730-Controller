@@ -1,26 +1,21 @@
-//! TKL keymap. Linear key IDs 0..N map to matrix via calibration.
-//! The firmware order for `51 a8` / `c0 02` is ascending linear ID, but the
-//! physical topology must be calibrated per layout with the `record` tool
-//! (see docs/RE_MACROS.md). This file ships a sane ANSI TKL default so the UI
-//! works immediately; run calibration to fix any swapped keys.
+//! MK730 keymap with real V2 firmware LED values (OpenRGB mk730_keymap).
+//! V2 direct mode has no single-LED command — the full 0xC1-entry colormap
+//! is pushed every time, indexed by these LED values.
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyDef {
-    /// Linear firmware key id (calibrate me)
-    pub id: u8,
+    /// Firmware LED index for V2 `56 83` colormap
+    pub id: u16,
     pub label: String,
-    /// grid position for UI rendering
     pub row: u8,
     pub col: u8,
-    /// width in units (e.g. backspace 2.0)
     pub w: f32,
-    /// extra CSS class (e.g. "iso", "accent")
     pub cls: String,
 }
 
-fn k(id: u8, label: &str, row: u8, col: u8, w: f32, cls: &str) -> KeyDef {
+fn k(id: u16, label: &str, row: u8, col: u8, w: f32, cls: &str) -> KeyDef {
     KeyDef {
         id,
         label: label.to_string(),
@@ -31,97 +26,72 @@ fn k(id: u8, label: &str, row: u8, col: u8, w: f32, cls: &str) -> KeyDef {
     }
 }
 
-/// Default 87-key ANSI TKL + 3 lightbar zones as virtual keys 200..202.
-/// IDs are sequential placeholders; replace with calibrated IDs after `record`.
+/// ANSI TKL with real LED values. Skips ISO-only keys.
 pub fn default_mk730_tkl() -> Vec<KeyDef> {
     let mut v: Vec<KeyDef> = Vec::new();
-    let mut id: u8 = 0;
-    let mut next = |label: &str, row: u8, col: u8, w: f32, cls: &str| {
-        // wrap safely (87 < 255 so fine)
-        let d = k(id, label, row, col, w, cls);
-        id = id.wrapping_add(1);
-        v.push(d);
-    };
 
-    // Row 0: Esc F1-F12 PrtSc ScrLk Pause
-    next("ESC", 0, 0, 1.0, "");
-    next("F1", 0, 2, 1.0, "");
-    next("F2", 0, 3, 1.0, "");
-    next("F3", 0, 4, 1.0, "");
-    next("F4", 0, 5, 1.0, "");
-    next("F5", 0, 7, 1.0, "");
-    next("F6", 0, 8, 1.0, "");
-    next("F7", 0, 9, 1.0, "");
-    next("F8", 0, 10, 1.0, "");
-    next("F9", 0, 12, 1.0, "");
-    next("F10", 0, 13, 1.0, "");
-    next("F11", 0, 14, 1.0, "");
-    next("F12", 0, 15, 1.0, "");
-    next("Prt", 0, 16, 1.0, "mini");
-    next("Scr", 0, 17, 1.0, "mini");
-    next("Pse", 0, 18, 1.0, "mini");
-
-    // Row 1: ` 1..0 - = Backspace Ins Home PgUp
-    let r1 = ["`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="];
-    for (i, l) in r1.iter().enumerate() {
-        next(l, 1, i as u8, 1.0, "");
+    // Row 0
+    for (i, l) in ["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","Prt","Scr","Pse"].iter().enumerate() {
+        let led = [7,28,35,42,49,63,70,77,84,91,98,105,112,119,126,133][i] as u16;
+        let col = match i { 0=>0, 1=>2, 2=>3, 3=>4, 4=>5, 5=>7, 6=>8, 7=>9, 8=>10, 9=>12, 10=>13, 11=>14, 12=>15, _=> 16+(i as u8 -13) };
+        v.push(k(led, l, 0, col, 1.0, if i>=13 {"mini"} else {""}));
     }
-    next("⌫", 1, 13, 2.0, "");
-    next("Ins", 1, 16, 1.0, "mini");
-    next("Hom", 1, 17, 1.0, "mini");
-    next("PgU", 1, 18, 1.0, "mini");
-
-    // Row 2: Tab Q..P [ ] \ Del End PgDn
-    next("Tab", 2, 0, 1.5, "");
-    for (i, l) in ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"].iter().enumerate() {
-        next(l, 2, (i + 2) as u8, 1.0, "");
+    // Row 1
+    for (i, l) in ["`","1","2","3","4","5","6","7","8","9","0","-","=","Back","Ins","Hom","PgU"].iter().enumerate() {
+        let led = [8,22,29,36,43,50,57,64,71,78,85,92,99,113,120,127,134][i] as u16;
+        let w = if *l=="Back" {2.0} else {1.0};
+        v.push(k(led, if *l=="Back" {"⌫"} else {l}, 1, i as u8, w, if i>=14 {"mini"} else {""}));
     }
-    next("[", 2, 12, 1.0, "");
-    next("]", 2, 13, 1.0, "");
-    next("\\", 2, 14, 1.5, "");
-    next("Del", 2, 16, 1.0, "mini");
-    next("End", 2, 17, 1.0, "mini");
-    next("PgD", 2, 18, 1.0, "mini");
-
-    // Row 3: Caps A..L ; ' Enter
-    next("Caps", 3, 0, 1.75, "");
-    for (i, l) in ["A", "S", "D", "F", "G", "H", "J", "K", "L"].iter().enumerate() {
-        next(l, 3, (i + 2) as u8, 1.0, "");
+    // Row 2
+    let r2 = ["Tab","Q","W","E","R","T","Y","U","I","O","P","[","]","\\","Del","End","PgD"];
+    let r2v = [9,23,30,37,44,51,58,65,72,79,86,93,100,114,121,128,135];
+    for (i, l) in r2.iter().enumerate() {
+        let w = if *l=="Tab" {1.5} else if *l=="\\" {1.5} else {1.0};
+        v.push(k(r2v[i] as u16, l, 2, i as u8, w, if i>=14 {"mini"} else {""}));
     }
-    next(";", 3, 11, 1.0, "");
-    next("'", 3, 12, 1.0, "");
-    next("Enter", 3, 13, 2.25, "");
-
-    // Row 4: Shift Z..M , . / Shift Up
-    next("Shift", 4, 0, 2.25, "");
-    for (i, l) in ["Z", "X", "C", "V", "B", "N", "M"].iter().enumerate() {
-        next(l, 4, (i + 2) as u8, 1.0, "");
+    // Row 3 (skip ISO # = 108)
+    let r3 = ["Caps","A","S","D","F","G","H","J","K","L",";", "'", "Enter"];
+    let r3v = [10,24,31,38,45,52,59,66,73,80,87,94,115];
+    for (i, l) in r3.iter().enumerate() {
+        let w = if *l=="Caps" {1.75} else if *l=="Enter" {2.25} else {1.0};
+        v.push(k(r3v[i] as u16, l, 3, i as u8, w, ""));
     }
-    next(",", 4, 9, 1.0, "");
-    next(".", 4, 10, 1.0, "");
-    next("/", 4, 11, 1.0, "");
-    next("Shift", 4, 12, 2.75, "");
-    next("▲", 4, 17, 1.0, "mini");
-
-    // Row 5: Ctrl Win Alt Space Alt FN Menu Left Down Right
-    next("Ctrl", 5, 0, 1.25, "");
-    next("Win", 5, 1, 1.25, "");
-    next("Alt", 5, 2, 1.25, "");
-    next("Space", 5, 3, 6.25, "");
-    next("Alt", 5, 10, 1.25, "");
-    next("FN", 5, 11, 1.25, "accent");
-    next("Menu", 5, 12, 1.25, "");
-    next("◀", 5, 16, 1.0, "mini");
-    next("▼", 5, 17, 1.0, "mini");
-    next("▶", 5, 18, 1.0, "mini");
-
-    // Virtual lightbar zones
-    v.push(k(200, "BAR-L", 6, 0, 4.0, "bar"));
-    v.push(k(201, "BAR-F", 6, 5, 6.0, "bar"));
-    v.push(k(202, "BAR-R", 6, 12, 4.0, "bar"));
+    // Row 4 (skip ISO \ = 18)
+    let r4 = ["Shift","Z","X","C","V","B","N","M",",",".","/","Shift","Up"];
+    let r4v = [11,25,32,39,46,53,60,67,74,81,88,116,130];
+    for (i, l) in r4.iter().enumerate() {
+        let w = if *l=="Shift" && i==0 {2.25} else if *l=="Shift" {2.75} else {1.0};
+        let col = if i>=12 {17} else {i as u8};
+        v.push(k(r4v[i] as u16, if *l=="Up" {"▲"} else {l}, 4, col, w, if i==12 {"mini"} else {""}));
+    }
+    // Row 5
+    let r5 = ["Ctrl","Win","Alt","Space","Alt","FN","Menu","Ctrl","Left","Down","Right"];
+    let r5v = [12,19,26,54,82,89,96,117,124,131,138];
+    for (i, l) in r5.iter().enumerate() {
+        let (w, col) = match i {
+            3 => (6.25, 3),
+            8 => (1.0, 16), 9 => (1.0, 17), 10 => (1.0, 18),
+            _ => (1.25, i as u8),
+        };
+        let label = match *l { "Left"=>"◀", "Down"=>"▼", "Right"=>"▶", x=>x };
+        v.push(k(r5v[i] as u16, label, 5, col, w, if i>=7 {"mini"} else if *l=="FN" {"accent"} else {""}));
+    }
 
     v
 }
+
+/// Lightbar / underglow LED groups (V2 colormap indices).
+pub fn lightbar_groups() -> Vec<(String, Vec<u16>)> {
+    vec![
+        ("Left".to_string(), vec![1,2,3,4]),
+        ("Right".to_string(), vec![141,142,143,144]),
+        ("Front".to_string(), vec![13,20,27,34,41,55,62,69,76,90,104,111,118,125]),
+        ("Logo".to_string(), vec![69]),
+    ]
+}
+
+/// Max LEDs for V2 direct packets.
+pub const V2_N_LEDS: u8 = 0xC1;
 
 #[cfg(test)]
 mod tests {
@@ -129,6 +99,11 @@ mod tests {
     #[test]
     fn has_tkl_count() {
         let m = default_mk730_tkl();
-        assert!(m.len() >= 87);
+        assert!(m.len() >= 85);
+        // spot-check real values: ESC=7, Space=54, Enter=115
+        let esc = m.iter().find(|k| k.label=="ESC").unwrap();
+        assert_eq!(esc.id, 7);
+        let sp = m.iter().find(|k| k.label=="Space").unwrap();
+        assert_eq!(sp.id, 54);
     }
 }

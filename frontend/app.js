@@ -94,14 +94,10 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   $("#tab-"+t.dataset.tab).classList.add("active");
 });
 
-// window controls
-async function win(){ 
-  if(window.__TAURI__?.window?.getCurrentWindow) return window.__TAURI__.window.getCurrentWindow();
-  return null;
-}
-$("#btn-min").onclick = async()=>{ const w=await win(); w?w.minimize():null; };
-$("#btn-max").onclick = async()=>{ const w=await win(); w?w.toggleMaximize():null; };
-$("#btn-close").onclick = async()=>{ const w=await win(); w?w.close():window.close(); };
+// window controls (backend commands always work; JS API fallback for dev)
+$("#btn-min").onclick = async()=>{ try{ await invoke("win_minimize"); }catch(e){} };
+$("#btn-max").onclick = async()=>{ try{ await invoke("win_toggle_maximize"); }catch(e){} };
+$("#btn-close").onclick = async()=>{ try{ await invoke("win_close"); }catch(e){ window.close(); } };
 
 // lighting actions
 $("#btn-fill").onclick = async()=>{
