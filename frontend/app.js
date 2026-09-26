@@ -284,15 +284,18 @@ $("#btn-m-save").onclick=async()=>{
 $("#btn-m-del").onclick=async()=>{ if(!state.selMacro)return; state.macros=await invoke("delete_macro",{id:state.selMacro}); state.selMacro=null; loadMacros(); };
 
 // settings
-$("#btn-scan").onclick=async()=>{
-  const ds=await invoke("list_devices");
-  const box=$("#devs");
+function renderDevs(ds){
+  const box=$("#devs"); if(!box) return;
   const real = ds.filter(d=>!d.demo);
   if(!real.length){
     box.innerHTML=`<div class="prof"><strong>No keyboard found</strong><span class="muted">Check the cable and try again</span></div>`;
   } else {
-    box.innerHTML=real.map(d=>`<div class="prof"><strong>${d.product||"Cooler Master keyboard"}</strong><span class="muted">${d.demo?"Not connected":"Ready"}</span></div>`).join("");
+    box.innerHTML=real.map(d=>`<div class="prof"><strong>${d.product||"Cooler Master keyboard"}</strong><span class="muted">Ready</span></div>`).join("");
   }
+}
+$("#btn-scan").onclick=async()=>{
+  const ds=await invoke("list_devices");
+  renderDevs(ds);
   refreshStatus();
 };
 let lastDebug = "";
@@ -302,7 +305,8 @@ async function showDebug(){
     lastDebug = JSON.stringify(d,null,2);
     const pre = $("#debug");
     pre.style.display = "block";
-    pre.textContent = `Found ${d.hid_cm.length} keyboard part(s).\n` + lastDebug.slice(0,4000);
+    const lines = (d.hid_all||[]).map(h=>`${h.vid}:${h.pid} ${h.product||"?"} (${h.mfr||"?"}) up=${h.up} if=${h.interface}`).join("\n");
+    pre.textContent = `Devices seen: ${d.hid_total}, matching keyboard: ${d.hid_cm.length}\n` + lines.slice(0,3000);
   }catch(e){ lastDebug = String(e); }
 }
 const _bd = $("#btn-debug"); if(_bd) _bd.onclick = showDebug;
@@ -323,7 +327,7 @@ async function safe(fn, name){
   await safe(loadKeys, "keys");
   await safe(loadProfiles, "profiles");
   await safe(loadMacros, "macros");
-  try{ await invoke("list_devices"); }catch(e){}
+  try{ renderDevs(await invoke("list_devices")); }catch(e){}
   refreshStatus();
   setInterval(refreshStatus, 5000);
 })();

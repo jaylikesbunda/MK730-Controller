@@ -186,19 +186,41 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
 #[derive(Debug, Clone, Serialize)]
 struct UsbDebug {
     hid_total: usize,
+    hid_all: Vec<serde_json::Value>,
     hid_cm: Vec<serde_json::Value>,
     rusb_cm: Vec<serde_json::Value>,
     rusb_error: String,
     hint: String,
 }
 
+fn short_str(s: &str, n: usize) -> String {
+    let mut t = s.replace(['\n', '\r'], " ");
+    if t.len() > n {
+        t.truncate(n);
+    }
+    t
+}
+
 #[tauri::command]
 fn debug_usb(state: State<AppState>) -> UsbDebug {
     let mut hid_total = 0usize;
+    let mut hid_all = Vec::new();
     let mut hid_cm = Vec::new();
     if let Ok(api) = hidapi::HidApi::new() {
         for dev in api.device_list() {
             hid_total += 1;
+            // Full list (capped) so an unexpected VID/PID can be spotted.
+            if hid_all.len() < 40 {
+                hid_all.push(serde_json::json!({
+                    "vid": format!("{:04x}", dev.vendor_id()),
+                    "pid": format!("{:04x}", dev.product_id()),
+                    "interface": dev.interface_number(),
+                    "up": dev.usage_page(),
+                    "usage": dev.usage(),
+                    "product": short_str(dev.product_string().unwrap_or(""), 48),
+                    "mfr": short_str(dev.manufacturer_string().unwrap_or(""), 32),
+                }));
+            }
             if SUPPORTED_VIDS.contains(&dev.vendor_id()) {
                 hid_cm.push(serde_json::json!({
                     "vid": format!("{:04x}", dev.vendor_id()),
@@ -246,6 +268,7 @@ fn debug_usb(state: State<AppState>) -> UsbDebug {
     );
     UsbDebug {
         hid_total,
+        hid_all,
         hid_cm,
         rusb_cm,
         rusb_error,
