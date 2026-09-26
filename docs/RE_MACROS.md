@@ -3,7 +3,7 @@
 ## 1. Confirm your VID/PID
 
 ```bash
-lsusb -v -d 2512: | grep -E "idVendor|idProduct|bInterfaceNumber|iProduct"
+lsusb -v -d 2516: | grep -E "idVendor|idProduct|bInterfaceNumber|iProduct"
 ```
 
 Add your PID to `CANDIDATE_PIDS` in `crates/mk730-core/src/lib.rs`.
@@ -11,7 +11,7 @@ Add your PID to `CANDIDATE_PIDS` in `crates/mk730-core/src/lib.rs`.
 ## 2. Capture lighting (verify MK730 == MK750)
 
 - Linux host + Windows VM (Portal v1.01) + Wireshark on `usbmon`.
-- Filter: `usb.idVendor == 0x2512`
+- Filter: `usb.idVendor == 0x2516`
 - Actions: change effect, speed, colors, save profile. Compare vs `proto::hex()` logs in app.
 - Save as `captures/mk730-lighting-<pid>.pcapng`.
 
@@ -39,7 +39,7 @@ Look for 64B OUT to EP 0x04 with new first bytes outside `41/50/51/52/c0`. Likel
 ## 5. Wireshark cheat-sheet
 
 ```
-usb.idVendor == 0x2512
+usb.idVendor == 0x2516
 usb.transfer_type == 0x01 && usb.endpoint_address.direction == 1
 usb.capdata  # leftover bytes = 64B payload
 tshark -r in.pcapng -Y usb.capdata -T fields -e usb.capdata

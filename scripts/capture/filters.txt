@@ -1,4 +1,4 @@
-usb.idVendor == 0x2512
+usb.idVendor == 0x2516
 # interrupt IN from keyboard:
 usb.transfer_type == 0x01 && usb.endpoint_address.direction == 1
 # control packets to Interface 1 EP 0x04:

@@ -5,8 +5,8 @@
 //! when WinUSB driver is bound. All commands log hex for capture comparison.
 
 use mk730_core::{
-    default_mk730_tkl, transport::demo_device, CANDIDATE_PIDS, CM_VID, CoreError, KeyDef, Macro,
-    Profile,
+    default_mk730_tkl, transport::demo_device, CANDIDATE_PIDS, SUPPORTED_VIDS, CoreError,
+    KeyDef, Macro, Profile,
 };
 use parking_lot::Mutex;
 use rusb::UsbContext;
@@ -86,7 +86,7 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
     if let Ok(api) = hidapi::HidApi::new() {
         for dev in api.device_list() {
             hid_total += 1;
-            if dev.vendor_id() == CM_VID {
+            if SUPPORTED_VIDS.contains(&dev.vendor_id()) {
                 let pid = dev.product_id();
                 let iface_raw = dev.interface_number();
                 let iface = if iface_raw < 0 { 255u8 } else { iface_raw as u8 };
@@ -112,7 +112,7 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
             if let Ok(list) = ctx.devices() {
                 for h in list.iter() {
                     if let Ok(desc) = h.device_descriptor() {
-                        if desc.vendor_id() == CM_VID {
+                        if SUPPORTED_VIDS.contains(&desc.vendor_id()) {
                             rusb_any.push(format!("{:04x}", desc.product_id()));
                             found.push(mk730_core::transport::DeviceInfo {
                                 vid: desc.vendor_id(),
@@ -136,7 +136,7 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
         push_log(
             &state,
             format!(
-                "list_devices: none with VID 2512 (hid_total={} rusb_cm={:?}) — demo",
+                "list_devices: none with VID 2516 (hid_total={} rusb_cm={:?}) — demo",
                 hid_total, rusb_any
             ),
         );
@@ -175,7 +175,7 @@ fn debug_usb(state: State<AppState>) -> UsbDebug {
     if let Ok(api) = hidapi::HidApi::new() {
         for dev in api.device_list() {
             hid_total += 1;
-            if dev.vendor_id() == CM_VID {
+            if SUPPORTED_VIDS.contains(&dev.vendor_id()) {
                 hid_cm.push(serde_json::json!({
                     "vid": format!("{:04x}", dev.vendor_id()),
                     "pid": format!("{:04x}", dev.product_id()),
@@ -196,7 +196,7 @@ fn debug_usb(state: State<AppState>) -> UsbDebug {
             Ok(list) => {
                 for h in list.iter() {
                     if let Ok(desc) = h.device_descriptor() {
-                        if desc.vendor_id() == CM_VID {
+                        if SUPPORTED_VIDS.contains(&desc.vendor_id()) {
                             rusb_cm.push(serde_json::json!({
                                 "vid": format!("{:04x}", desc.vendor_id()),
                                 "pid": format!("{:04x}", desc.product_id()),
@@ -225,7 +225,7 @@ fn debug_usb(state: State<AppState>) -> UsbDebug {
         hid_cm,
         rusb_cm,
         rusb_error,
-        hint: "If empty: check Device Manager -> Keyboards -> Details -> Hardware Ids for VID_2512&PID_XXXX, or PowerShell: Get-CimInstance Win32_PnPEntity | Where-Object {$_.DeviceID -like '*VID_2512*'} | Select-Object Name,DeviceID".to_string(),
+        hint: "If empty: check Device Manager -> Keyboards -> Details -> Hardware Ids for VID_2516&PID_XXXX, or PowerShell: Get-CimInstance Win32_PnPEntity | Where-Object {$_.DeviceID -like '*VID_2516*'} | Select-Object Name,DeviceID".to_string(),
     }
 }
 
@@ -258,7 +258,7 @@ fn try_rusb_write(pkt: &[u8; 64]) -> Result<(), String> {
     let mut others: Vec<rusb::Device<rusb::Context>> = Vec::new();
     for handle in list.iter() {
         if let Ok(desc) = handle.device_descriptor() {
-            if desc.vendor_id() != CM_VID {
+            if !SUPPORTED_VIDS.contains(&desc.vendor_id()) {
                 continue;
             }
             if CANDIDATE_PIDS.contains(&desc.product_id()) {
@@ -269,7 +269,7 @@ fn try_rusb_write(pkt: &[u8; 64]) -> Result<(), String> {
         }
     }
     cands.extend(others);
-    let mut last_err = "no USB device with VID 2512 found — check cable, Device Manager Hardware Ids for VID_2512".to_string();
+    let mut last_err = "no USB device with VID 2516 found — check cable, Device Manager Hardware Ids for VID_2516".to_string();
     for handle in cands {
         let desc = handle.device_descriptor().map_err(|e| format!("desc: {}", e))?;
         let h = handle.open().map_err(|e| {

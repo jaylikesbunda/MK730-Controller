@@ -1,5 +1,5 @@
 # Cooler Master MK730 — allow Interface 1 control via libusb, keep IF0 as HID keyboard
-SUBSYSTEM=="usb", ATTRS{idVendor}=="2512", MODE="0666"
-SUBSYSTEM=="usb_device", ATTRS{idVendor}=="2512", MODE="0666"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2516", MODE="0666"
+SUBSYSTEM=="usb_device", ATTRS{idVendor}=="2516", MODE="0666"
 # hidraw fallback (control interface only; do not grab typing interface)
-KERNEL=="hidraw*", ATTRS{idVendor}=="2512", MODE="0660", GROUP="plugdev"
+KERNEL=="hidraw*", ATTRS{idVendor}=="2516", MODE="0660", GROUP="plugdev"

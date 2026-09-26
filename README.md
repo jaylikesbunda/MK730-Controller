@@ -10,7 +10,7 @@ Open-source Tauri controller for Cooler Master MK730 (MasterKeys family) — no 
 - **Effects**: hardware effects `51 28` + params `51 2c` (speed/direction/colors), multilayer flag
 - **Profiles**: P1–P5, `51 00` switch, `50 55` save to firmware, JSON export/import, apply-to-device sequence
 - **Macros**: local-first recorder/editor (trigger + HID events + delays + repeat). Firmware sync = `pending_capture`, see `docs/RE_MACROS.md`
-- **Device**: VID `0x2512` scan via hidapi+rusb, mode switch `41 00..03`, hex logs for capture diffing
+- **Device**: VID `0x2516` scan via hidapi+rusb, mode switch `41 00..03`, hex logs for capture diffing
 - **Theme**: dark minimal rounded, custom top bar with integrated window controls, `decorations:false + transparent:true`
 
 ## Quick start
@@ -18,7 +18,7 @@ Open-source Tauri controller for Cooler Master MK730 (MasterKeys family) — no 
 ### Linux
 
 ```bash
-lsusb -v -d 2512:   # confirm PID, add to CANDIDATE_PIDS in crates/mk730-core/src/lib.rs
+lsusb -v -d 2516:   # confirm PID, add to CANDIDATE_PIDS in crates/mk730-core/src/lib.rs
 sudo cp udev/99-mk730.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 cargo test -p mk730-core

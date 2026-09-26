@@ -18,7 +18,7 @@ async function mock(cmd, args) {
     return demoKeys;
   }
   if (cmd === "get_status") return { connected: false, demo: true, firmware: "browser-demo", mode: 1, active_profile: 0, log_tail: ["browser preview: backend not attached"] };
-  if (cmd === "list_devices") return [{ vid: 0x2512, pid: 0x0067, interface: 1, path: "demo://mk730", product: "MK730 (browser demo)", demo: true }];
+  if (cmd === "list_devices") return [{ vid: 0x2516, pid: 0x0067, interface: 1, path: "demo://mk730", product: "MK730 (browser demo)", demo: true }];
   if (cmd === "debug_usb") return { hid_total: 0, hid_cm: [], rusb_cm: [], rusb_error: "", hint: "" };
   if (cmd === "get_profiles") return [0,1,2,3,4].map(i=>({id:i,name:"P"+(i+1),effect_id:4,params:{p1_speed:32,p2:0,p3:32,color1:{r:124,g:58,b:237},color2:{r:0,g:0,b:0},multilayer:0},colormap:[],brightness:100}));
   if (cmd === "get_macros") return [];

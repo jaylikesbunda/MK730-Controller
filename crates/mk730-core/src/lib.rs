@@ -17,15 +17,25 @@ pub use profiles::Profile;
 pub use proto::{EffectId, EffectParams, WaveDirection};
 pub use transport::{DeviceInfo, TransportKind};
 
-/// Known Cooler Master USB vendor ID.
-pub const CM_VID: u16 = 0x2512;
+/// Known Cooler Master USB vendor ID (OpenRGB: COOLERMASTER_VID).
+pub const CM_VID: u16 = 0x2516;
+/// Legacy / alternate VID seen in older docs. Kept for scanning fallback.
+pub const CM_VID_ALT: u16 = 0x2512;
 
-/// Candidate PIDs (Portal family). MK730 PIDs vary by switch/layout;
-/// confirm with `lsusb -v -d 2512:` and add yours here.
+/// Candidate PIDs (V2 family, OpenRGB CMKeyboardDevices.h).
+/// MK730 = 0x008F, MK750 = 0x0067. Others included so sibling boards also show up.
 pub const CANDIDATE_PIDS: &[u16] = &[
-    0x0067, // MK750 (reference)
-    0x0086, 0x0087, 0x0088, // commonly seen CM keyboard range, verify
+    0x008F, // MK730
+    0x0067, // MK750
+    0x009F, 0x0147, 0x0145, 0x007F, // CK530 / CK550 V2 / CK552 V2
+    0x0089, 0x008D, // SK630 / SK650
+    0x015D, 0x01AB, 0x0149, 0x014B, // SK652 / SK653 / SK622
+    0x0157, 0x0159, // SK620
+    0x0069, // MK850
 ];
+
+/// All VIDs we scan for.
+pub const SUPPORTED_VIDS: &[u16] = &[CM_VID, CM_VID_ALT];
 
 /// App-level error (serializable for Tauri).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
