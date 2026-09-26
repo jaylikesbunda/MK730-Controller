@@ -1,7 +1,10 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
+
+// Tauri 2 with withGlobalTauri exposes window.__TAURI__.invoke.
+// window.__TAURI__.core does NOT exist — checking it first silently sent every
+// call to the mock backend, which is why the app always said "not connected".
 const invoke = async (cmd, args = {}) => {
-  if (window.__TAURI__?.core?.invoke) return window.__TAURI__.core.invoke(cmd, args);
   if (window.__TAURI__?.invoke) return window.__TAURI__.invoke(cmd, args);
   return mock(cmd, args);
 };
