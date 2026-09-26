@@ -21,6 +21,10 @@ cargo tauri dev
 cargo tauri build --bundles nsis
 ```
 
+## Release
+
+In GitHub Actions, run **Release** and enter a version such as `0.2.0`. The workflow updates the app version, commits it as the workflow initiator, builds Windows MSI and NSIS installers, and publishes a `v0.2.0` release.
+
 The Windows lighting interface is HID interface 1; if another driver has claimed it, bind that interface to WinUSB while leaving interface 0 unchanged.
 
 ## Project layout

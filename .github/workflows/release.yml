@@ -1,10 +1,10 @@
-name: release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version number (e.g. 0.2.0, no leading v)"
+        description: "Release version (for example 0.2.0)"
         required: true
         type: string
 
@@ -12,72 +12,146 @@ permissions:
   contents: write
 
 jobs:
-  tag:
+  prepare:
+    name: Set release version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.t.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.commit.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out selected branch
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: t
-        run: |
-          VER="${{ inputs.version }}"
-          VER="${VER#v}"
-          echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
-          echo "version=${VER}" >> "$GITHUB_OUTPUT"
-      - name: set versions
-        run: |
-          VER="${{ steps.t.outputs.version }}"
-          sed -i "s/^version = .*/version = \"${VER}\"/" crates/mk730-core/Cargo.toml
-          sed -i "s/^version = .*/version = \"${VER}\"/" src-tauri/Cargo.toml
-          python3 - <<PY
-          import json
-          p="src-tauri/tauri.conf.json"
-          d=json.load(open(p))
-          d["version"]="${VER}"
-          json.dump(d,open(p,"w"),indent=2)
-          print("tauri.conf -> ${VER}")
-          PY
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add -A
-          git commit -m "release v${VER}" || echo "nothing to commit"
-          git tag "v${VER}"
-          git push origin "v${VER}" || echo "no remote / push skipped (local repo)"
 
-  build:
-    needs: tag
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            args: ""
-          - os: windows-latest
-            args: ""
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: system deps (linux)
-        if: runner.os == 'Linux'
+      - name: Validate version and ref
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libusb-1.0-0-dev libudev-dev
-      - uses: actions/setup-node@v4
+          if [[ "$GITHUB_REF_TYPE" != "branch" ]]; then
+            echo "Run this workflow from a branch." >&2
+            exit 1
+          fi
+
+          version="${INPUT_VERSION#v}"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Enter a stable semantic version such as 0.2.0 (optional leading v)." >&2
+            exit 1
+          fi
+
+          tag="v${version}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists. Choose a new version." >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply version to app metadata
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+
+          for filename in ("crates/mk730-core/Cargo.toml", "src-tauri/Cargo.toml"):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              updated, count = re.subn(
+                  r'(?m)^version = "[^"]+"$',
+                  f'version = "{version}"',
+                  text,
+                  count=1,
+              )
+              if count != 1:
+                  raise SystemExit(f"Could not update package version in {filename}")
+              path.write_text(updated, encoding="utf-8")
+
+          config_path = Path("src-tauri/tauri.conf.json")
+          config = json.loads(config_path.read_text(encoding="utf-8"))
+          config["version"] = version
+          config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+          html_path = Path("frontend/index.html")
+          html, count = re.subn(
+              r'(<span id="ver">)v[^<]*(</span>)',
+              rf'\g<1>v{version}\g<2>',
+              html_path.read_text(encoding="utf-8"),
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Could not update the version shown in frontend/index.html")
+          html_path.write_text(html, encoding="utf-8")
+
+          lock_path = Path("src-tauri/Cargo.lock")
+          lock = lock_path.read_text(encoding="utf-8")
+          for package in ("mk730-controller", "mk730-core"):
+              pattern = rf'(\[\[package\]\]\nname = "{re.escape(package)}"\nversion = ")[^"]+'
+              lock, count = re.subn(pattern, rf'\g<1>{version}', lock, count=1)
+              if count != 1:
+                  raise SystemExit(f"Could not update {package} in Cargo.lock")
+          lock_path.write_text(lock, encoding="utf-8")
+          PY
+
+      - name: Validate lockfile and stage release commit
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          cargo metadata --manifest-path src-tauri/Cargo.toml --locked --no-deps --format-version 1 >/dev/null
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
+          git add crates/mk730-core/Cargo.toml src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json frontend/index.html
+          if ! git diff --cached --quiet; then
+            git commit -m "release: v${RELEASE_VERSION}"
+            git push origin "HEAD:${GITHUB_REF}"
+          fi
+
+      - name: Export release commit
+        id: commit
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-and-release:
+    name: Build Windows installers and publish release
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - name: Check out versioned source
+        uses: actions/checkout@v4
         with:
-          node-version: 20
-      - name: build tauri bundles
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build installers and publish GitHub release
         uses: tauri-apps/tauri-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ needs.tag.outputs.tag }}
-          releaseName: "MK730 Controller ${{ needs.tag.outputs.tag }}"
-          releaseBody: "Open-source MK730 controller. Linux + Windows bundles. See README for udev/Zadig notes."
+          projectPath: src-tauri
+          tauriScript: cargo tauri
+          args: --bundles nsis,msi
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseCommitish: ${{ needs.prepare.outputs.commit }}
+          releaseName: MK730 Controller ${{ needs.prepare.outputs.tag }}
+          releaseBody: Windows NSIS and MSI installers for MK730 Controller.
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
+          uploadUpdaterJson: false
