@@ -1,8 +1,7 @@
-//! MK730 Controller Tauri backend.
-//! Transport: try hidapi enumeration for CM VID, else demo mode so the UI
-//! is always usable. Actual 64B interrupt writes go via rusb Interface 1
-//! (OUT 0x04) on Linux; on Windows via hidapi feature reports path + rusb
-//! when WinUSB driver is bound. All commands log hex for capture comparison.
+// Hide the console window in release builds on Windows.
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
+//! MK730 Controller Tauri backend (V2 HID protocol, OpenRGB-derived).
 
 use mk730_core::{
     default_mk730_tkl, transport::demo_device, CANDIDATE_PIDS, SUPPORTED_VIDS, CoreError,

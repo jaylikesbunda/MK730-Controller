@@ -308,7 +308,22 @@ async function showDebug(){
 const _bd = $("#btn-debug"); if(_bd) _bd.onclick = showDebug;
 const _bc = $("#btn-copy-debug"); if(_bc) _bc.onclick = async()=>{ if(!lastDebug) await showDebug(); try{ await navigator.clipboard.writeText(lastDebug); }catch(e){} };
 
+window.addEventListener("error", (e)=>{
+  const s = $("#status");
+  if(s) s.textContent = "Something didn't load — reopen the app. (" + (e.message||"error") + ")";
+});
+
+async function safe(fn, name){
+  try{ await fn(); }
+  catch(e){ console.warn(name, e); }
+}
+
 (async function boot(){
-  await loadKeys(); await loadProfiles(); await loadMacros(); $("#btn-scan").click(); refreshStatus();
-  setInterval(refreshStatus, 4000);
+  $("#status").textContent = "Looking for your keyboard…";
+  await safe(loadKeys, "keys");
+  await safe(loadProfiles, "profiles");
+  await safe(loadMacros, "macros");
+  try{ await invoke("list_devices"); }catch(e){}
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
 })();
