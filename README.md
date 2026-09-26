@@ -1,62 +1,35 @@
 # MK730 Controller
 
-Open-source Tauri controller for Cooler Master MK730 (MasterKeys family) — no Portal required for lighting/profiles. Macros store locally until firmware RE lands.
-
-![platform](https://img.shields.io/badge/platform-linux%20%7C%20windows-blue) ![tauri](https://img.shields.io/badge/tauri-v2-purple) ![license](https://img.shields.io/badge/license-MIT-green)
+A small desktop app for controlling the Cooler Master MK730 keyboard.
 
 ## Features
 
-- **Lighting**: full-board (`c0 00`), per-key (`c0 01`), colormap push (`c0 02`), TKL visual editor
-- **Effects**: hardware effects `51 28` + params `51 2c` (speed/direction/colors), multilayer flag
-- **Profiles**: P1–P5, `51 00` switch, `50 55` save to firmware, JSON export/import, apply-to-device sequence
-- **Macros**: local-first recorder/editor (trigger + HID events + delays + repeat). Firmware sync = `pending_capture`, see `docs/RE_MACROS.md`
-- **Device**: VID `0x2516` scan via hidapi+rusb, mode switch `41 00..03`, hex logs for capture diffing
-- **Theme**: dark minimal rounded, custom top bar with integrated window controls, `decorations:false + transparent:true`
+- Paint keys and lightbar zones, adjust brightness, and apply lighting effects.
+- Save and load five lighting profiles; import and export profiles as JSON.
+- Create macros that run from a Windows hotkey while the app is open.
+- Switch between light and dark themes.
 
-## Quick start
+Macros run on the PC and are not stored in the keyboard firmware.
 
-### Linux
+## Build
 
-```bash
-lsusb -v -d 2516:   # confirm PID, add to CANDIDATE_PIDS in crates/mk730-core/src/lib.rs
-sudo cp udev/99-mk730.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-cargo test -p mk730-core
-cargo check --manifest-path src-tauri/Cargo.toml
-# full launcher (needs Tauri system deps):
-# sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libusb-1.0-0-dev libudev-dev
-cargo tauri dev -- --port 1420
-```
-
-### Windows
+Requires a current stable Rust toolchain and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```powershell
-cargo test -p mk730-core
-cargo check --manifest-path src-tauri/Cargo.toml
+cd src-tauri
 cargo tauri dev
-# If IF1 claim fails: Zadig -> bind Interface 1 only to WinUSB, keep IF0 HID.
+cargo tauri build --bundles nsis
 ```
 
-## Repo layout
+The Windows lighting interface is HID interface 1; if another driver has claimed it, bind that interface to WinUSB while leaving interface 0 unchanged.
 
-```
-frontend/            # static UI (custom top bar, dark rounded theme)
-src-tauri/           # Tauri 2 backend (hidapi+rusb, commands)
-crates/mk730-core/   # pure protocol (proto/keymap/profiles/macros), no system deps
-udev/                # Linux permissions
-docs/                # PROTOCOL + RE_MACROS capture guide
-scripts/capture/     # Wireshark filter cheat-sheet
-.github/workflows/   # ci + release (version input)
-```
+## Project layout
 
-## Protocol
-
-See `docs/PROTOCOL.md` (derived from `chmod222/libcmmk` PROTOCOL.md, LGPL-3.0, archived 2026). Summary: 64B interrupt on IF1 EP `0x04` OUT.
-
-## Release
-
-`Actions -> Release -> Run workflow -> version: 0.2.0` builds Linux + Windows bundles and publishes a GitHub Release. See `.github/workflows/release.yml`.
+- `frontend/` — static HTML, CSS, and JavaScript
+- `src-tauri/` — Tauri and Windows HID backend
+- `crates/mk730-core/` — protocol, keymap, profiles, and macro model
+- `docs/` — protocol notes
 
 ## License
 
-MIT. Protocol docs credit `chmod222/libcmmk` (LGPL-3.0).
+The application is MIT licensed. Protocol notes credit [libcmmk](https://github.com/chmod222/libcmmk) (LGPL-3.0).

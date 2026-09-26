@@ -6,3 +6,13 @@ src-tauri/target/
 .DS_Store
 Thumbs.db
 captures/*.pcapng
+.chrome-preview/
+preview-*.png
+/src-tauri/icons/android/
+/src-tauri/icons/ios/
+/src-tauri/icons/32x32.png
+/src-tauri/icons/64x64.png
+/src-tauri/icons/128x128.png
+/src-tauri/icons/128x128@2x.png
+/src-tauri/icons/Square*Logo.png
+/src-tauri/icons/StoreLogo.png

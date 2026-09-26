@@ -1,5 +1,8 @@
 from PIL import Image, ImageDraw, ImageFont
-import struct
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 S = 512
 img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -26,10 +29,21 @@ x = (S - w)/2 - bb[0]
 y = (S - h)/2 - bb[1] - 6
 d.text((x, y), "MK", fill=(196, 181, 253, 255), font=f)
 
-img.save("src-tauri/icons/icon.png")
+root = Path(__file__).resolve().parents[1]
+icon_dir = root / "src-tauri" / "icons"
+png_path = icon_dir / "icon.png"
+img.save(png_path)
 print("png saved", img.size)
-png = open("src-tauri/icons/icon.png", "rb").read()
-h = struct.pack("<HHH", 0, 1, 1)
-e = struct.pack("<BBBBHHII", 0, 0, 0, 0, 1, 32, len(png), 22)
-open("src-tauri/icons/icon.ico", "wb").write(h + e + png)
-print("ico saved", len(png))
+
+# Tauri writes correctly sized ICO and ICNS variants. Hand-writing an ICO
+# directory around a 512px PNG labels the image as 256px and looks rough in
+# the Windows taskbar.
+with tempfile.TemporaryDirectory() as temp_dir:
+    subprocess.run(
+        ["cargo", "tauri", "icon", str(png_path), "--output", temp_dir],
+        cwd=root / "src-tauri",
+        check=True,
+    )
+    for name in ("icon.ico", "icon.icns"):
+        shutil.copy2(Path(temp_dir) / name, icon_dir / name)
+print("generated multi-size Windows and macOS icons")
