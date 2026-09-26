@@ -8,13 +8,11 @@
 </head>
 <body>
 <div id="window">
-  <!-- custom top bar -->
   <header id="titlebar" data-tauri-drag-region>
     <div class="tb-left" data-tauri-drag-region>
-      <div class="logo">MK</div>
       <div class="tb-title" data-tauri-drag-region>
         <strong>MK730 Controller</strong>
-        <span id="conn-pill" class="pill demo">demo</span>
+        <span id="conn-pill" class="pill demo">Not connected</span>
       </div>
     </div>
     <nav class="tabs" data-tauri-drag-region>
@@ -22,7 +20,7 @@
       <button class="tab" data-tab="effects">Effects</button>
       <button class="tab" data-tab="profiles">Profiles</button>
       <button class="tab" data-tab="macros">Macros</button>
-      <button class="tab" data-tab="device">Device</button>
+      <button class="tab" data-tab="device">Settings</button>
     </nav>
     <div class="tb-controls">
       <button id="btn-min" class="wbtn" title="Minimize"><svg viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
@@ -32,18 +30,17 @@
   </header>
 
   <main id="content">
-    <!-- LIGHTING -->
     <section id="tab-lighting" class="panel active">
       <div class="grid2">
         <div class="card">
-          <div class="card-h"><h2>Keyboard</h2><span class="hint">click a key to paint it</span></div>
+          <div class="card-h"><h2>Keyboard</h2><span class="hint">Pick a color, then click keys</span></div>
           <div id="kbd"></div>
           <div id="bars"></div>
           <div class="row">
             <input type="color" id="pick" value="#7c3aed" />
             <button id="btn-fill" class="btn primary">Fill all</button>
-            <button id="btn-apply-map" class="btn">Push colormap to device</button>
-            <button id="btn-clear" class="btn ghost">Clear</button>
+            <button id="btn-apply-map" class="btn">Apply</button>
+            <button id="btn-clear" class="btn ghost">Turn off</button>
           </div>
           <div class="row small">
             <label>Brightness <input type="range" id="bright" min="10" max="100" value="100" /></label>
@@ -51,67 +48,64 @@
           </div>
         </div>
         <div class="card">
-          <div class="card-h"><h2>Quick</h2></div>
+          <div class="card-h"><h2>Colors</h2></div>
           <div class="swatches" id="swatches"></div>
-          <div class="row"><button class="btn" data-c="#ffffff">White</button><button class="btn" data-c="#7c3aed">Violet</button><button class="btn" data-c="#06b6d4">Cyan</button><button class="btn" data-c="#22c55e">Green</button><button class="btn" data-c="#ef4444">Red</button><button class="btn" data-c="#000000">Off</button></div>
-          <h3>Log</h3>
-          <pre id="log" class="log"></pre>
+          <div class="row"><button class="btn" data-c="#ffffff">White</button><button class="btn" data-c="#7c3aed">Purple</button><button class="btn" data-c="#06b6d4">Blue</button><button class="btn" data-c="#22c55e">Green</button><button class="btn" data-c="#ef4444">Red</button><button class="btn" data-c="#000000">Off</button></div>
+          <h3>Status</h3>
+          <p id="log" class="muted"></p>
         </div>
       </div>
     </section>
 
-    <!-- EFFECTS -->
     <section id="tab-effects" class="panel">
       <div class="grid2">
         <div class="card">
-          <div class="card-h"><h2>Hardware effect</h2><span class="hint">51 28 / 51 2c</span></div>
+          <div class="card-h"><h2>Effects</h2></div>
           <label>Effect<select id="fx"></select></label>
-          <label>Speed (10 fast – 50 slow)<input type="range" id="fx-p1" min="10" max="50" value="32" /><span id="fx-p1-v">32</span></label>
-          <label>Direction / mode (p2)<select id="fx-p2"><option value="0">0x00 default / L→R</option><option value="2">0x02 back→front</option><option value="4">0x04 R→L</option><option value="6">0x06 front→back</option><option value="128">0x80 ripple random</option></select></label>
-          <label>Intensity (p3)<input type="range" id="fx-p3" min="10" max="50" value="32" /><span id="fx-p3-v">32</span></label>
-          <div class="row"><label>Color 1 <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Color 2 <input type="color" id="fx-c2" value="#000000" /></label></div>
+          <label>Speed<input type="range" id="fx-p1" min="10" max="50" value="32" /><span id="fx-p1-v">Medium</span></label>
+          <label>Direction<select id="fx-p2"><option value="0">Left to right</option><option value="2">Back to front</option><option value="4">Right to left</option><option value="6">Front to back</option><option value="128">Random colors</option></select></label>
+          <label>Amount<input type="range" id="fx-p3" min="10" max="50" value="32" /><span id="fx-p3-v">Medium</span></label>
+          <div class="row"><label>Main color <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Background <input type="color" id="fx-c2" value="#000000" /></label></div>
           <div class="row"><button id="btn-fx-apply" class="btn primary">Apply effect</button></div>
         </div>
-        <div class="card"><div class="card-h"><h2>Notes</h2></div><p class="muted">Effects run on firmware (mode <code>41 01</code>). Manual paint uses <code>41 02 + c0</code>. Switching is automatic. Save to P1–P5 from Profiles tab (<code>50 55</code>).</p><p class="muted">Wave directions: 00 L→R, 04 R→L, 02 B→F, 06 F→B. Ripple 0x80 = random color per press.</p></div>
+        <div class="card"><div class="card-h"><h2>About</h2></div><p class="muted">Effects run on the keyboard itself. To keep a look after unplugging, save it to a profile.</p></div>
       </div>
     </section>
 
-    <!-- PROFILES -->
     <section id="tab-profiles" class="panel">
       <div class="grid2">
-        <div class="card"><div class="card-h"><h2>On-board P1–P5</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save active to firmware (50 55)</button></div></div>
-        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Export JSON</button><label class="btn ghost">Import JSON<input type="file" id="file-import" accept=".json" hidden /></label></div><textarea id="prof-json" rows="14" spellcheck="false"></textarea><div class="row"><button id="btn-apply-profile" class="btn primary">Apply selected to device</button></div></div>
+        <div class="card"><div class="card-h"><h2>Profiles</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save to keyboard</button></div></div>
+        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Save to file</button><label class="btn ghost">Load from file<input type="file" id="file-import" accept=".json" hidden /></label></div><textarea id="prof-json" rows="14" spellcheck="false"></textarea><div class="row"><button id="btn-apply-profile" class="btn primary">Apply to keyboard</button></div></div>
       </div>
     </section>
 
-    <!-- MACROS -->
     <section id="tab-macros" class="panel">
       <div class="grid2">
-        <div class="card"><div class="card-h"><h2>Macros</h2><span class="hint">local-first, FW pending RE</span></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Trigger e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div><p class="muted">Firmware macro encoding is not yet RE'd (see Device → RE guide). Macros store locally and are fully editable so captures can be tied to a trigger.</p></div>
-        <div class="card"><div class="card-h"><h2>Editor</h2></div><input id="m-name" placeholder="Macro name" /><label>Keys (one HID per line: <code>0x04 pressed 120ms</code>)<textarea id="m-events" rows="10" placeholder="0x04 down 0&#10;0x04 up 120"></textarea></label><div class="row"><button id="btn-m-save" class="btn primary">Save macro</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label><span id="m-fw" class="pill">local_only</span></div></div>
+        <div class="card"><div class="card-h"><h2>Macros</h2></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Shortcut key, e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div><p class="muted">Macros replay key presses from a single key.</p></div>
+        <div class="card"><div class="card-h"><h2>Edit macro</h2></div><input id="m-name" placeholder="Name" /><label>Key presses<textarea id="m-events" rows="10" placeholder="a down&#10;a up"></textarea></label><div class="row"><button id="btn-m-save" class="btn primary">Save</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label></div></div>
       </div>
     </section>
 
-    <!-- DEVICE -->
     <section id="tab-device" class="panel">
       <div class="grid2">
-        <div class="card"><div class="card-h"><h2>Connection</h2><button id="btn-scan" class="btn">Rescan</button></div><div id="devs"></div><div class="row"><button id="btn-mode-fw" class="btn">41 00 firmware</button><button id="btn-mode-fx" class="btn">41 01 effect</button><button id="btn-mode-man" class="btn">41 02 manual</button><button id="btn-mode-prof" class="btn">41 03 profile</button></div></div>
-        <div class="card"><div class="card-h"><h2>RE & setup</h2></div><pre class="log">Linux:
-  lsusb -v -d 2512:
-  sudo cp udev/99-mk730.rules /etc/udev/rules.d/ && sudo udevadm control --reload
-  Wireshark + usbmon, filter usb.idVendor==0x2512
-
-Windows:
-  Wireshark + USBPcap, Portal in VM or host
-  Bind Interface 1 to WinUSB only if needed (Zadig), keep IF0 HID.
-
-Calibrate keymap: see docs/RE_MACROS.md (record tool pattern).
-Macros: capture macro create/assign/delete in Portal, attach pcapng.</pre></div>
+        <div class="card">
+          <div class="card-h"><h2>Connection</h2><button id="btn-scan" class="btn">Check again</button></div>
+          <div id="devs"></div>
+          <p class="muted" id="dev-hint">Plug in your keyboard with USB, close the Cooler Master app if you have it open, then check again.</p>
+          <div class="row"><button id="btn-debug" class="btn ghost">Show details</button><button id="btn-copy-debug" class="btn ghost">Copy details</button></div>
+          <pre id="debug" class="log" style="display:none"></pre>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>Help</h2></div>
+          <p class="muted">If the keyboard is not found:</p>
+          <p class="muted">1. Use the USB cable that came with it, try another port.<br/>2. Close Portal or other lighting apps.<br/>3. On Windows, open Device Manager, find your keyboard, and confirm it is connected.</p>
+          <details><summary class="muted">Advanced</summary><p class="muted">Linux needs one setup step documented in the README. Some models need their exact version added before they are recognized — copy the details above when asking for help.</p></details>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer id="statusbar"><span id="status">boot…</span><span id="ver">v0.1.0</span></footer>
+  <footer id="statusbar"><span id="status">Starting…</span><span id="ver">v0.1.0</span></footer>
 </div>
 <script src="app.js"></script>
 </body>

@@ -19,6 +19,7 @@ async function mock(cmd, args) {
   }
   if (cmd === "get_status") return { connected: false, demo: true, firmware: "browser-demo", mode: 1, active_profile: 0, log_tail: ["browser preview: backend not attached"] };
   if (cmd === "list_devices") return [{ vid: 0x2512, pid: 0x0067, interface: 1, path: "demo://mk730", product: "MK730 (browser demo)", demo: true }];
+  if (cmd === "debug_usb") return { hid_total: 0, hid_cm: [], rusb_cm: [], rusb_error: "", hint: "" };
   if (cmd === "get_profiles") return [0,1,2,3,4].map(i=>({id:i,name:"P"+(i+1),effect_id:4,params:{p1_speed:32,p2:0,p3:32,color1:{r:124,g:58,b:237},color2:{r:0,g:0,b:0},multilayer:0},colormap:[],brightness:100}));
   if (cmd === "get_macros") return [];
   return "demo-ok";
@@ -32,12 +33,20 @@ function parseColor(s){ return [parseInt(s.slice(1,3),16),parseInt(s.slice(3,5),
 async function refreshStatus(){
   try{
     const st = await invoke("get_status");
-    $("#status").textContent = `${st.demo ? "demo" : "connected"} · fw ${st.firmware} · mode 41 0${st.mode} · P${st.active_profile+1}`;
     const pill = $("#conn-pill");
-    pill.textContent = st.demo ? "demo" : "live";
-    pill.className = "pill " + (st.demo ? "demo" : "live");
-    $("#log").textContent = (st.log_tail||[]).join("\n");
-  }catch(e){ $("#status").textContent = "status err "+e; }
+    if (st.demo) {
+      pill.textContent = "Not connected";
+      pill.className = "pill demo";
+      $("#status").textContent = "Not connected — plug in your keyboard and choose Check again in Settings.";
+    } else {
+      pill.textContent = "Connected";
+      pill.className = "pill live";
+      $("#status").textContent = `Connected · Profile ${st.active_profile+1} · Ready`;
+    }
+    const tail = (st.log_tail||[]).filter(Boolean);
+    const el = $("#log");
+    if (el) el.textContent = tail.length ? tail[0].replace(/\[.*?\]:?\s*/,"").slice(0,160) : "Ready.";
+  }catch(e){ $("#status").textContent = "Something went wrong starting up."; }
 }
 
 async function loadKeys(){
@@ -116,10 +125,11 @@ $$("[data-c]").forEach(b=>b.onclick=()=>{ $("#pick").value=b.dataset.c; });
 $("#bright").oninput = e=>$("#bright-v").textContent=e.target.value+"%";
 
 // effects
-const FX=[[0,"Fully lit"],[1,"Breathe"],[2,"Color cycle"],[3,"Single key"],[4,"Wave"],[5,"Ripple"],[6,"Cross"],[7,"Raindrops"],[8,"Stars"],[9,"Snake"],[10,"Customized"],[224,"Multilayer"],[254,"Off"]];
+const FX=[[0,"Steady"],[1,"Breathing"],[2,"Color cycle"],[3,"Single key"],[4,"Wave"],[5,"Ripple"],[6,"Fade"],[7,"Rain"],[8,"Stars"],[9,"Snake"],[10,"Custom"],[224,"Layers"],[254,"Off"]];
 const fxSel=$("#fx"); FX.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===4)o.selected=true; fxSel.appendChild(o); });
-$("#fx-p1").oninput=e=>$("#fx-p1-v").textContent=e.target.value;
-$("#fx-p3").oninput=e=>$("#fx-p3-v").textContent=e.target.value;
+function speedLabel(v){ v=+v; if(v<=20) return "Fast"; if(v>=42) return "Slow"; return "Medium"; }
+$("#fx-p1").oninput=e=>$("#fx-p1-v").textContent=speedLabel(e.target.value);
+$("#fx-p3").oninput=e=>$("#fx-p3-v").textContent=speedLabel(e.target.value);
 $("#btn-fx-apply").onclick=async()=>{
   const eid=+fxSel.value, p1=+$("#fx-p1").value, p2=+$("#fx-p2").value, p3=+$("#fx-p3").value;
   const c1=parseColor($("#fx-c1").value), c2=parseColor($("#fx-c2").value);
@@ -129,13 +139,14 @@ $("#btn-fx-apply").onclick=async()=>{
 };
 
 // profiles
+function fxName(id){ const f=FX.find(x=>x[0]===+id); return f?f[1]:"Custom"; }
 async function loadProfiles(){
   state.profiles = await invoke("get_profiles");
   const pl=$("#plist"); pl.innerHTML="";
   state.profiles.forEach(p=>{
     const d=document.createElement("div"); d.className="prof"+(p.id===state.activeProfile?" active":"");
-    d.innerHTML=`<strong>${p.name}</strong><span class="muted">fx ${p.effect_id}</span>`;
-    const b=document.createElement("button"); b.className="btn"; b.textContent="Activate";
+    d.innerHTML=`<strong>${p.name}</strong><span class="muted">${fxName(p.effect_id)}</span>`;
+    const b=document.createElement("button"); b.className="btn"; b.textContent="Use";
     b.onclick=async()=>{ await invoke("set_active_profile",{id:p.id}); state.activeProfile=p.id; $("#prof-json").value=JSON.stringify(p,null,2); loadProfiles(); refreshStatus(); };
     d.appendChild(b); pl.appendChild(d);
   });
@@ -145,31 +156,33 @@ $("#btn-prof-refresh").onclick=loadProfiles;
 $("#btn-save-fw").onclick=async()=>{ await invoke("save_profile_fw"); refreshStatus(); };
 $("#btn-export").onclick=()=>{ const blob=new Blob([$("#prof-json").value],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="mk730-profile.json"; a.click(); };
 $("#file-import").onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>$("#prof-json").value=r.result; r.readAsText(f); };
-$("#btn-apply-profile").onclick=async()=>{ try{ const p=JSON.parse($("#prof-json").value); await invoke("apply_profile_to_device",{p}); await invoke("upsert_profile",{p}); loadProfiles(); refreshStatus(); }catch(err){ alert("bad JSON: "+err); } };
+$("#btn-apply-profile").onclick=async()=>{ try{ const p=JSON.parse($("#prof-json").value); await invoke("apply_profile_to_device",{p}); await invoke("upsert_profile",{p}); loadProfiles(); refreshStatus(); }catch(err){ alert("That file could not be read."); } };
 
 // macros
 async function loadMacros(){
   state.macros = await invoke("get_macros");
-  const ml=$("#mlist"); ml.innerHTML="";
-  if(!state.macros.length) ml.innerHTML='<p class="muted">No macros yet. Create one with a trigger key.</p>';
+  const ml=$("#mlist"); if(!ml) return; ml.innerHTML="";
+  if(!state.macros.length) ml.innerHTML='<p class="muted">No macros yet. Create one to get started.</p>';
   state.macros.forEach(m=>{
     const d=document.createElement("div"); d.className="mac";
-    d.innerHTML=`<strong>${m.trigger}</strong><span class="muted">${m.name} · ${m.events.length} ev · ${m.fw_state}</span>`;
-    d.onclick=()=>{ state.selMacro=m.id; $("#m-name").value=m.name; $("#m-trigger").value=m.trigger; $("#m-repeat").value=m.repeat||0; $("#m-fw").textContent=m.fw_state; $("#m-events").value=(m.events||[]).map(e=>`0x${e.hid.toString(16).padStart(2,"0")} ${e.pressed?"down":"up"} ${e.delay_ms}`).join("\n"); };
+    d.innerHTML=`<strong>${m.trigger}</strong><span class="muted">${m.name} · ${m.events.length} steps</span>`;
+    d.onclick=()=>{ state.selMacro=m.id; $("#m-name").value=m.name; $("#m-trigger").value=m.trigger; $("#m-repeat").value=m.repeat||0; $("#m-events").value=(m.events||[]).map(e=>`0x${e.hid.toString(16).padStart(2,"0")} ${e.pressed?"down":"up"} ${e.delay_ms}`).join("\n"); };
     ml.appendChild(d);
   });
 }
-$("#btn-m-new").onclick=()=>{ const t=($("#m-trigger").value||"F5").toUpperCase(); state.selMacro=null; $("#m-name").value="Macro "+t; $("#m-events").value="0x04 down 0\n0x04 up 120"; $("#m-fw").textContent="local_only"; };
+$("#btn-m-new").onclick=()=>{ const t=($("#m-trigger").value||"F5").toUpperCase(); state.selMacro=null; $("#m-name").value="Macro "+t; $("#m-events").value="0x04 down 0\n0x04 up 120"; };
 $("#btn-m-save").onclick=async()=>{
   const trigger=($("#m-trigger").value||"F5").toUpperCase();
   const lines=$("#m-events").value.split("\n").map(s=>s.trim()).filter(Boolean);
   const events=[];
   for(const ln of lines){
-    const m=/0x([0-9a-fA-F]+)\s+(down|up|press)\s*(\d+)?/.exec(ln);
-    if(!m){ alert("bad line: "+ln); return; }
-    const hid=parseInt(m[1],16), pressed=m[2]!=="up", delay_ms=+(m[3]||0);
+    const m=/0x([0-9a-fA-F]+)\s+(down|up|press)\s*(\d+)?/.exec(ln) || /^([a-z0-9])\s+(down|up)\s*(\d+)?/i.exec(ln);
+    if(!m){ alert("Could not understand this line: "+ln); return; }
+    let hid, pressed, delay_ms;
+    if(ln.startsWith("0x")||ln.startsWith("0X")){ hid=parseInt(m[1],16); pressed=m[2].toLowerCase()!=="up"; delay_ms=+(m[3]||0); }
+    else { hid=m[1].toLowerCase().charCodeAt(0)-87; pressed=m[2].toLowerCase()!=="up"; delay_ms=+(m[3]||0); }
     events.push({hid,pressed,delay_ms,modifier:0});
-    if(m[2]==="press"){ events.push({hid,pressed:false,delay_ms:80,modifier:0}); }
+    if(m[2].toLowerCase()==="press"){ events.push({hid,pressed:false,delay_ms:80,modifier:0}); }
   }
   const ex = state.macros.find(x=>x.id===state.selMacro);
   const obj={ id: ex?.id || ("m_"+Date.now()), name: $("#m-name").value||("Macro "+trigger), trigger, events, repeat:+$("#m-repeat").value||0, fw_state:"local_only" };
@@ -177,16 +190,30 @@ $("#btn-m-save").onclick=async()=>{
 };
 $("#btn-m-del").onclick=async()=>{ if(!state.selMacro)return; state.macros=await invoke("delete_macro",{id:state.selMacro}); state.selMacro=null; loadMacros(); };
 
-// device
+// settings
 $("#btn-scan").onclick=async()=>{
   const ds=await invoke("list_devices");
-  $("#devs").innerHTML=ds.map(d=>`<div class="prof"><strong>${d.product}</strong><span class="muted">VID ${d.vid.toString(16)} PID ${d.pid.toString(16)} IF${d.interface} ${d.demo?"· demo":""}</span></div>`).join("");
+  const box=$("#devs");
+  const real = ds.filter(d=>!d.demo);
+  if(!real.length){
+    box.innerHTML=`<div class="prof"><strong>No keyboard found</strong><span class="muted">Check the cable and try again</span></div>`;
+  } else {
+    box.innerHTML=real.map(d=>`<div class="prof"><strong>${d.product||"Cooler Master keyboard"}</strong><span class="muted">${d.demo?"Not connected":"Ready"}</span></div>`).join("");
+  }
   refreshStatus();
 };
-$("#btn-mode-fw").onclick=async()=>{ await invoke("set_mode",{mode:0}); refreshStatus(); };
-$("#btn-mode-fx").onclick=async()=>{ await invoke("set_mode",{mode:1}); refreshStatus(); };
-$("#btn-mode-man").onclick=async()=>{ await invoke("set_mode",{mode:2}); refreshStatus(); };
-$("#btn-mode-prof").onclick=async()=>{ await invoke("set_mode",{mode:3}); refreshStatus(); };
+let lastDebug = "";
+async function showDebug(){
+  try{
+    const d = await invoke("debug_usb");
+    lastDebug = JSON.stringify(d,null,2);
+    const pre = $("#debug");
+    pre.style.display = "block";
+    pre.textContent = `Found ${d.hid_cm.length} keyboard part(s).\n` + lastDebug.slice(0,4000);
+  }catch(e){ lastDebug = String(e); }
+}
+const _bd = $("#btn-debug"); if(_bd) _bd.onclick = showDebug;
+const _bc = $("#btn-copy-debug"); if(_bc) _bc.onclick = async()=>{ if(!lastDebug) await showDebug(); try{ await navigator.clipboard.writeText(lastDebug); }catch(e){} };
 
 (async function boot(){
   await loadKeys(); await loadProfiles(); await loadMacros(); $("#btn-scan").click(); refreshStatus();

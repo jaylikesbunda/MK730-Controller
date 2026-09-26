@@ -78,32 +78,42 @@ fn get_status(state: State<AppState>) -> Status {
 #[tauri::command]
 fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo> {
     let mut found = Vec::new();
-    // hidapi enumeration (works on Linux + Windows without claiming)
+    let mut hid_total = 0usize;
+    let mut cm_any: Vec<String> = Vec::new();
+    // hidapi enumeration (works on Linux + Windows without claiming).
+    // NOTE: do NOT filter by PID here — MK730 PIDs vary by switch/layout and
+    // Windows reports each HID collection separately (interface may be -1).
     if let Ok(api) = hidapi::HidApi::new() {
         for dev in api.device_list() {
-            if dev.vendor_id() == CM_VID
-                && CANDIDATE_PIDS.contains(&dev.product_id())
-            {
+            hid_total += 1;
+            if dev.vendor_id() == CM_VID {
+                let pid = dev.product_id();
+                let iface_raw = dev.interface_number();
+                let iface = if iface_raw < 0 { 255u8 } else { iface_raw as u8 };
+                cm_any.push(format!("{:04x} if{}", pid, iface));
                 found.push(mk730_core::transport::DeviceInfo {
                     vid: dev.vendor_id(),
-                    pid: dev.product_id(),
-                    interface: dev.interface_number() as u8,
+                    pid,
+                    interface: iface,
                     path: format!("{:?}", dev.path()),
-                    product: dev.product_string().unwrap_or("Cooler Master").to_string(),
+                    product: dev
+                        .product_string()
+                        .unwrap_or("Cooler Master")
+                        .to_string(),
                     demo: false,
                 });
             }
         }
     }
-    // rusb fallback probe (interface 1 present?)
+    // rusb fallback probe: any device with CM VID, any PID.
+    let mut rusb_any: Vec<String> = Vec::new();
     if found.is_empty() {
         if let Ok(ctx) = rusb::Context::new() {
             if let Ok(list) = ctx.devices() {
                 for h in list.iter() {
                     if let Ok(desc) = h.device_descriptor() {
-                        if desc.vendor_id() == CM_VID
-                            && CANDIDATE_PIDS.contains(&desc.product_id())
-                        {
+                        if desc.vendor_id() == CM_VID {
+                            rusb_any.push(format!("{:04x}", desc.product_id()));
                             found.push(mk730_core::transport::DeviceInfo {
                                 vid: desc.vendor_id(),
                                 pid: desc.product_id(),
@@ -123,7 +133,13 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
         }
     }
     if found.is_empty() {
-        push_log(&state, "list_devices: none found, demo device".to_string());
+        push_log(
+            &state,
+            format!(
+                "list_devices: none with VID 2512 (hid_total={} rusb_cm={:?}) — demo",
+                hid_total, rusb_any
+            ),
+        );
         return vec![demo_device()];
     }
     {
@@ -131,8 +147,86 @@ fn list_devices(state: State<AppState>) -> Vec<mk730_core::transport::DeviceInfo
         d.connected = true;
         d.demo = false;
     }
-    push_log(&state, format!("list_devices: {} candidate(s)", found.len()));
+    push_log(
+        &state,
+        format!(
+            "list_devices: {} CM device(s) [{}] hid_total={}",
+            found.len(),
+            cm_any.join(","),
+            hid_total
+        ),
+    );
     found
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UsbDebug {
+    hid_total: usize,
+    hid_cm: Vec<serde_json::Value>,
+    rusb_cm: Vec<serde_json::Value>,
+    rusb_error: String,
+    hint: String,
+}
+
+#[tauri::command]
+fn debug_usb(state: State<AppState>) -> UsbDebug {
+    let mut hid_total = 0usize;
+    let mut hid_cm = Vec::new();
+    if let Ok(api) = hidapi::HidApi::new() {
+        for dev in api.device_list() {
+            hid_total += 1;
+            if dev.vendor_id() == CM_VID {
+                hid_cm.push(serde_json::json!({
+                    "vid": format!("{:04x}", dev.vendor_id()),
+                    "pid": format!("{:04x}", dev.product_id()),
+                    "interface": dev.interface_number(),
+                    "usage_page": dev.usage_page(),
+                    "usage": dev.usage(),
+                    "product": dev.product_string().unwrap_or(""),
+                    "manufacturer": dev.manufacturer_string().unwrap_or(""),
+                    "path": format!("{:?}", dev.path()),
+                }));
+            }
+        }
+    }
+    let mut rusb_cm = Vec::new();
+    let mut rusb_error = String::new();
+    match rusb::Context::new() {
+        Ok(ctx) => match ctx.devices() {
+            Ok(list) => {
+                for h in list.iter() {
+                    if let Ok(desc) = h.device_descriptor() {
+                        if desc.vendor_id() == CM_VID {
+                            rusb_cm.push(serde_json::json!({
+                                "vid": format!("{:04x}", desc.vendor_id()),
+                                "pid": format!("{:04x}", desc.product_id()),
+                                "bus": h.bus_number(),
+                                "addr": h.address(),
+                            }));
+                        }
+                    }
+                }
+            }
+            Err(e) => rusb_error = format!("devices: {}", e),
+        },
+        Err(e) => rusb_error = format!("ctx: {}", e),
+    }
+    push_log(
+        &state,
+        format!(
+            "debug_usb: hid_total={} cm_hid={} cm_rusb={}",
+            hid_total,
+            hid_cm.len(),
+            rusb_cm.len()
+        ),
+    );
+    UsbDebug {
+        hid_total,
+        hid_cm,
+        rusb_cm,
+        rusb_error,
+        hint: "If empty: check Device Manager -> Keyboards -> Details -> Hardware Ids for VID_2512&PID_XXXX, or PowerShell: Get-CimInstance Win32_PnPEntity | Where-Object {$_.DeviceID -like '*VID_2512*'} | Select-Object Name,DeviceID".to_string(),
+    }
 }
 
 fn send_packet(state: &State<AppState>, pkt: &[u8; 64], label: &str) -> Result<String, CoreError> {
@@ -159,12 +253,32 @@ fn send_packet(state: &State<AppState>, pkt: &[u8; 64], label: &str) -> Result<S
 fn try_rusb_write(pkt: &[u8; 64]) -> Result<(), String> {
     let ctx = rusb::Context::new().map_err(|e| format!("rusb ctx: {}", e))?;
     let list = ctx.devices().map_err(|e| format!("rusb list: {}", e))?;
+    // Prefer known PIDs first, then any CM VID device (MK730 PIDs vary).
+    let mut cands: Vec<rusb::Device<rusb::Context>> = Vec::new();
+    let mut others: Vec<rusb::Device<rusb::Context>> = Vec::new();
     for handle in list.iter() {
-        let desc = handle.device_descriptor().map_err(|e| format!("desc: {}", e))?;
-        if desc.vendor_id() != CM_VID || !CANDIDATE_PIDS.contains(&desc.product_id()) {
-            continue;
+        if let Ok(desc) = handle.device_descriptor() {
+            if desc.vendor_id() != CM_VID {
+                continue;
+            }
+            if CANDIDATE_PIDS.contains(&desc.product_id()) {
+                cands.push(handle);
+            } else {
+                others.push(handle);
+            }
         }
-        let h = handle.open().map_err(|e| format!("open: {}", e))?;
+    }
+    cands.extend(others);
+    let mut last_err = "no USB device with VID 2512 found — check cable, Device Manager Hardware Ids for VID_2512".to_string();
+    for handle in cands {
+        let desc = handle.device_descriptor().map_err(|e| format!("desc: {}", e))?;
+        let h = handle.open().map_err(|e| {
+            format!(
+                "open {:04x}: {} (Windows: close Portal/RGB apps; Linux: udev rules)",
+                desc.product_id(),
+                e
+            )
+        })?;
         // Detach kernel driver on Interface 1 only (Linux). Never touch IF 0 (typing).
         #[cfg(target_os = "linux")]
         {
@@ -172,17 +286,25 @@ fn try_rusb_write(pkt: &[u8; 64]) -> Result<(), String> {
                 let _ = h.detach_kernel_driver(1);
             }
         }
-        h.claim_interface(1).map_err(|e| format!("claim IF1 (need udev/WinUSB, see docs): {}", e))?;
+        if let Err(e) = h.claim_interface(1) {
+            last_err = format!(
+                "claim IF1 on {:04x}: {} (Windows: bind IF1 to WinUSB via Zadig, keep IF0 HID; Linux: udev rules)",
+                desc.product_id(),
+                e
+            );
+            continue;
+        }
         // EP 0x04 OUT, 1000ms timeout
         let n = h.write_interrupt(0x04, pkt, std::time::Duration::from_millis(1000))
             .map_err(|e| format!("write_interrupt 0x04: {}", e))?;
         h.release_interface(1).ok();
         if n != 64 {
-            return Err(format!("short write {}", n));
+            last_err = format!("short write {}", n);
+            continue;
         }
         return Ok(());
     }
-    Err("no MK730 candidate matched VID/PID list — check lsusb and CANDIDATE_PIDS".to_string())
+    Err(last_err)
 }
 
 #[tauri::command]
@@ -378,6 +500,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_status,
             list_devices,
+            debug_usb,
             set_mode,
             set_full_color,
             set_key_color,
