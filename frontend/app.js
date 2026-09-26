@@ -25,55 +25,80 @@ async function mock(cmd, args) {
   return "demo-ok";
 }
 
-const state = { keys: [], colors: {}, profiles: [], macros: [], activeProfile: 0, selMacro: null };
+const state = { keys: [], colors: {}, profiles: [], macros: [], activeProfile: 0, selMacro: null, tool: "paint", fx: 7, fxLevel: 3, fxDir: 0 };
 
 function hex(c){ const h=(n)=>n.toString(16).padStart(2,"0"); return `#${h(c[0])}${h(c[1])}${h(c[2])}`; }
 function parseColor(s){ return [parseInt(s.slice(1,3),16),parseInt(s.slice(3,5),16),parseInt(s.slice(5,7),16)]; }
+function dimmed(hexStr, pct){
+  const [r,g,b]=parseColor(hexStr);
+  return `rgb(${Math.round(r*pct/100)},${Math.round(g*pct/100)},${Math.round(b*pct/100)})`;
+}
 
 async function refreshStatus(){
   try{
     const st = await invoke("get_status");
     const pill = $("#conn-pill");
+    const sideDot = $("#side-dot"), sideStatus = $("#side-status");
     if (st.demo) {
       pill.textContent = "Not connected";
       pill.className = "pill demo";
       $("#status").textContent = "Not connected — plug in your keyboard and choose Check again in Settings.";
+      if(sideDot) sideDot.style.background = "#f59e0b";
+      if(sideStatus) sideStatus.textContent = "Not connected";
     } else {
       pill.textContent = "Connected";
       pill.className = "pill live";
       $("#status").textContent = `Connected · Profile ${st.active_profile+1} · Ready`;
+      if(sideDot) sideDot.style.background = "#22c55e";
+      if(sideStatus) sideStatus.textContent = "MK730 · Ready";
     }
     const tail = (st.log_tail||[]).filter(Boolean);
     const el = $("#log");
-    if (el) el.textContent = tail.length ? tail[0].replace(/\[.*?\]:?\s*/,"").slice(0,160) : "Ready.";
+    if (el) el.textContent = tail.length ? "Ready. Your changes apply automatically." : "Ready.";
   }catch(e){ $("#status").textContent = "Something went wrong starting up."; }
+}
+
+function keyColor(id){
+  const pct = +($("#bright").value||100);
+  const base = state.colors[id];
+  if(!base) return "";
+  const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(base);
+  if(!m) return base;
+  return `rgb(${Math.round(+m[1]*pct/100)},${Math.round(+m[2]*pct/100)},${Math.round(+m[3]*pct/100)})`;
 }
 
 async function loadKeys(){
   state.keys = await invoke("get_keymap");
   const kbd = $("#kbd"); kbd.innerHTML = "";
   const rows = {};
-  state.keys.filter(k=>k.id<200).forEach(k=>{ (rows[k.row] ||= []).push(k); });
+  state.keys.forEach(k=>{ (rows[k.row] ||= []).push(k); });
   Object.keys(rows).sort().forEach(r=>{
     const div = document.createElement("div"); div.className="krow";
     rows[r].sort((a,b)=>a.col-b.col).forEach(k=>{
       const b = document.createElement("button");
       b.className = "key "+(k.cls||""); b.textContent = k.label;
-      b.style.flexGrow = k.w; b.title = `id ${k.id}`;
-      b.style.background = state.colors[k.id] || "";
-      b.onclick = ()=>{ const [rr,gg,bb]=parseColor($("#pick").value); paint(k.id,rr,gg,bb); };
+      b.style.flexGrow = k.w; b.dataset.led = k.id;
+      b.style.background = keyColor(k.id);
+      b.onclick = ()=>onKey(b, k.id);
       div.appendChild(b);
     });
     kbd.appendChild(div);
   });
   const bars = $("#bars"); bars.innerHTML="";
-  const brow=document.createElement("div"); brow.className="krow";
-  state.keys.filter(k=>k.id>=200).forEach(k=>{
-    const b=document.createElement("button"); b.className="key bar"; b.textContent=k.label;
-    b.onclick=()=>{ const [rr,gg,bb]=parseColor($("#pick").value); paint(k.id,rr,gg,bb); };
-    brow.appendChild(b);
-  });
-  bars.appendChild(brow);
+}
+
+function onKey(btn, led){
+  let [r,g,b]=parseColor($("#pick").value);
+  if(state.tool==="erase"){ r=g=b=0; }
+  if(state.tool==="fill"){
+    state.keys.forEach(k=>{ state.colors[k.id]=`rgb(${r},${g},${b})`; });
+    $$("#kbd .key").forEach(x=>{ x.style.background = dimmed($("#pick").value, +($("#bright").value||100)); });
+    schedulePush();
+    return;
+  }
+  state.colors[led]=`rgb(${r},${g},${b})`;
+  btn.style.background = keyColor(led);
+  schedulePush();
 }
 
 let pushTimer = null;
@@ -89,15 +114,15 @@ async function pushFullMap(){
   });
   try{ await invoke("set_colormap",{colors:arr}); refreshStatus(); }catch(e){}
 }
-function paint(id,r,g,b){
-  state.colors[id]=`rgb(${r},${g},${b})`;
-  // instant UI feedback, batched device push to avoid HID lag
-  const btns = $$("#kbd .key");
-  loadKeys();
-  schedulePush();
-}
 
-// tabs
+// sidebar nav
+$$(".nav").forEach(t=>t.onclick=()=>{
+  $$(".nav").forEach(x=>x.classList.remove("active"));
+  $$(".panel").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active");
+  $("#tab-"+t.dataset.tab).classList.add("active");
+});
+// legacy tabs (if present)
 $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".tab").forEach(x=>x.classList.remove("active"));
   $$(".panel").forEach(x=>x.classList.remove("active"));
@@ -111,42 +136,77 @@ $("#btn-max").onclick = async()=>{ try{ await invoke("win_toggle_maximize"); }ca
 $("#btn-close").onclick = async()=>{ try{ await invoke("win_close"); }catch(e){ window.close(); } };
 
 // lighting actions
+function repaintKeys(){
+  $$("#kbd .key").forEach(x=>{
+    const led = +x.dataset.led;
+    x.style.background = keyColor(led);
+  });
+}
 $("#btn-fill").onclick = async()=>{
   const [r,g,b]=parseColor($("#pick").value);
+  state.keys.forEach(k=>state.colors[k.id]=`rgb(${r},${g},${b})`); repaintKeys();
   await invoke("set_full_color",{r,g,b}); refreshStatus();
-  state.colors={}; state.keys.forEach(k=>state.colors[k.id]=`rgb(${r},${g},${b})`); loadKeys();
 };
-$("#btn-clear").onclick = async()=>{ await invoke("set_full_color",{r:0,g:0,b:0}); state.colors={}; loadKeys(); refreshStatus(); };
-$("#btn-apply-map").onclick = async()=>{
-  // 255-entry map indexed by firmware LED value (V2 direct mode).
-  const arr = Array.from({length:255},()=>[0,0,0]);
-  state.keys.forEach(k=>{
-    const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(state.colors[k.id]||"");
-    if(m && k.id<255) arr[k.id]=[+m[1],+m[2],+m[3]];
-  });
-  await invoke("set_colormap",{colors:arr}); refreshStatus();
-};
+$("#btn-clear").onclick = async()=>{ state.colors={}; repaintKeys(); await invoke("set_full_color",{r:0,g:0,b:0}); refreshStatus(); };
+$("#btn-apply-map").onclick = async()=>{ await pushFullMap(); };
+// brush tools
+$$("#tool-seg .seg-btn").forEach(b=>b.onclick=()=>{
+  $$("#tool-seg .seg-btn").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); state.tool=b.dataset.tool;
+});
 $$("#swatches") // placeholder
-const SW=["#7c3aed","#06b6d4","#22c55e","#eab308","#f97316","#ef4444","#ec4899","#ffffff","#64748b","#000000","#3b82f6","#a3e635","#facc15","#14b8a6","#f43f5e","#8b5cf6"];
+const SW=["#7c3aed","#06b6d4","#22c55e","#eab308","#f97316","#ef4444","#ec4899","#ffffff"];
 const sw=$("#swatches"); SW.forEach(c=>{ const d=document.createElement("div"); d.className="sw"; d.style.background=c; d.onclick=()=>$("#pick").value=c; sw.appendChild(d); });
-$$("[data-c]").forEach(b=>b.onclick=()=>{ $("#pick").value=b.dataset.c; });
-$("#bright").oninput = e=>$("#bright-v").textContent=e.target.value+"%";
+$("#bright").oninput = e=>{ $("#bright-v").textContent=e.target.value+"%"; repaintKeys(); schedulePush(); };
+// lightbar groups (firmware LED values)
+const BARS={Left:[1,2,3,4],Right:[141,142,143,144],Front:[13,20,27,34,41,55,62,76,90,104,111,118,125],Logo:[69]};
+$$("[data-bar]").forEach(b=>b.onclick=()=>{
+  const [r,g,bl]=parseColor($("#pick").value);
+  (BARS[b.dataset.bar]||[]).forEach(led=>{ state.colors[led]=`rgb(${r},${g},${bl})`; });
+  schedulePush(); refreshStatus();
+});
 
 // effects (V2 firmware values)
 const FX=[[1,"Custom paint"],[4,"Steady"],[5,"Breathing"],[6,"Color cycle"],[7,"Wave"],[8,"Ripple"],[9,"Crosshair"],[10,"Rain"],[11,"Stars"],[21,"Snow"],[20,"Fireball"],[19,"Heartbeat"],[23,"Water ripple"],[16,"Reactive fade"],[22,"Circle spectrum"],[13,"Customized"],[24,"Off"]];
-const fxSel=$("#fx"); FX.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===7)o.selected=true; fxSel.appendChild(o); });
-function speedLabel(v){ v=+v; if(v<=2) return "Slow"; if(v>=4) return "Fast"; return "Medium"; }
-$("#fx-p1").oninput=e=>$("#fx-p1-v").textContent=speedLabel(e.target.value);
-$("#fx-p3").oninput=e=>$("#fx-p3-v").textContent=speedLabel(e.target.value);
+const NEEDS_TWO = new Set([8,9,10,11,21,20,19,23,16,5]);
+const NEEDS_DIR = new Set([7,22]);
+const NEEDS_COLOR = new Set([4,5,8,9,10,11,21,20,19,23,16,1]);
+function renderFxGrid(){
+  const g=$("#fx-grid"); if(!g) return; g.innerHTML="";
+  FX.forEach(([v,l])=>{
+    const d=document.createElement("div");
+    d.className="fx"+(state.fx===v?" active":"");
+    d.innerHTML=`<b>${l}</b><span></span>`;
+    d.onclick=()=>{ state.fx=v; renderFxGrid(); syncFxOptions(); };
+    g.appendChild(d);
+  });
+}
+function syncFxOptions(){
+  const nm = (FX.find(x=>x[0]===state.fx)||[])[1]||"";
+  const nn=$("#fx-name"); if(nn) nn.textContent=nm;
+  const show=(id,on)=>{ const e=$(id); if(e) e.style.display=on?"":"none"; };
+  show("#fx-speed-row", state.fx!==4 && state.fx!==1 && state.fx!==24 && state.fx!==13);
+  show("#fx-dir-row", NEEDS_DIR.has(state.fx));
+  show("#fx-colors", NEEDS_COLOR.has(state.fx));
+}
+$$("#fx-speed-seg .seg-btn").forEach(b=>b.onclick=()=>{
+  $$("#fx-speed-seg .seg-btn").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); state.fxLevel=+b.dataset.v;
+});
+$$("#fx-dir-seg .seg-btn").forEach(b=>b.onclick=()=>{
+  $$("#fx-dir-seg .seg-btn").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); state.fxDir=+b.dataset.v;
+});
+state.fxLevel=3; state.fxDir=0;
 $("#btn-fx-apply").onclick=async()=>{
-  const eid=+fxSel.value;
-  const level=+$("#fx-p1").value <=5 ? +$("#fx-p1").value : 3;
-  const dir=+$("#fx-p2").value;
-  const brightness=255;
+  const eid=state.fx;
+  const level=state.fxLevel||3, dir=state.fxDir||0;
+  const brightness=+($("#fx-bright").value||255);
   const c1=parseColor($("#fx-c1").value), c2=parseColor($("#fx-c2").value);
   await invoke("set_effect_params",{p:{eid,level,brightness,dir,c1,c2}});
   refreshStatus();
 };
+renderFxGrid(); syncFxOptions();
 
 // profiles
 function fxName(id){ const f=FX.find(x=>x[0]===+id); return f?f[1]:"Custom"; }

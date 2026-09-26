@@ -15,13 +15,6 @@
         <span id="conn-pill" class="pill demo">Not connected</span>
       </div>
     </div>
-    <nav class="tabs" data-tauri-drag-region>
-      <button class="tab active" data-tab="lighting">Lighting</button>
-      <button class="tab" data-tab="effects">Effects</button>
-      <button class="tab" data-tab="profiles">Profiles</button>
-      <button class="tab" data-tab="macros">Macros</button>
-      <button class="tab" data-tab="device">Settings</button>
-    </nav>
     <div class="tb-controls">
       <button id="btn-min" class="wbtn" title="Minimize"><svg viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
       <button id="btn-max" class="wbtn" title="Maximize"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
@@ -29,81 +22,99 @@
     </div>
   </header>
 
-  <main id="content">
-    <section id="tab-lighting" class="panel active">
-      <div class="grid2">
+  <div id="shell">
+    <aside id="side">
+      <nav id="nav">
+        <button class="nav active" data-tab="lighting"><svg viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 7h2M7 7h2M10 7h2M4 9.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>Paint</button>
+        <button class="nav" data-tab="effects"><svg viewBox="0 0 16 16"><path d="M8 1.5l1.8 3.9 4.2.5-3.1 2.9.8 4.1-3.7-2-3.7 2 .8-4.1L1.9 5.9l4.2-.5z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Effects</button>
+        <button class="nav" data-tab="profiles"><svg viewBox="0 0 16 16"><path d="M3 3.5h10v9H3z M5.5 6h5M5.5 8.5h5M5.5 11h3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>Profiles</button>
+        <button class="nav" data-tab="macros"><svg viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="13" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5 6l2 2-2 2M8.5 10H11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Macros</button>
+        <button class="nav" data-tab="device"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3l2 1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>Settings</button>
+      </nav>
+      <div class="side-foot">
+        <div class="conn-card"><span class="dot" id="side-dot"></span><span id="side-status">Not connected</span></div>
+      </div>
+    </aside>
+
+    <main id="content">
+      <section id="tab-lighting" class="panel active">
+        <div class="page-h"><h1>Paint</h1><p>Click keys to color them. Changes apply automatically.</p></div>
         <div class="card">
-          <div class="card-h"><h2>Keyboard</h2><span class="hint">Pick a color, then click keys</span></div>
           <div id="kbd"></div>
           <div id="bars"></div>
-          <div class="row">
-            <input type="color" id="pick" value="#7c3aed" />
-            <button id="btn-fill" class="btn primary">Fill all</button>
-            <button id="btn-apply-map" class="btn">Apply</button>
-            <button id="btn-clear" class="btn ghost">Turn off</button>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h"><h2>Brush</h2></div>
+            <div class="seg" id="tool-seg">
+              <button class="seg-btn active" data-tool="paint">Paint</button>
+              <button class="seg-btn" data-tool="fill">Fill</button>
+              <button class="seg-btn" data-tool="erase">Erase</button>
+            </div>
+            <div class="row"><input type="color" id="pick" value="#7c3aed" /><div class="swatches" id="swatches"></div></div>
+            <label class="fld">Brightness<input type="range" id="bright" min="10" max="100" value="100" /><span id="bright-v">100%</span></label>
+            <div class="row"><button id="btn-apply-map" class="btn primary">Apply now</button><button id="btn-clear" class="btn ghost">Turn off</button></div>
           </div>
-          <div class="row small">
-            <label>Brightness <input type="range" id="bright" min="10" max="100" value="100" /></label>
-            <span id="bright-v">100%</span>
+          <div class="card">
+            <div class="card-h"><h2>Light bar</h2></div>
+            <p class="muted">Color the side and front glow.</p>
+            <div class="row"><button class="btn" data-bar="Left">Left</button><button class="btn" data-bar="Right">Right</button><button class="btn" data-bar="Front">Front</button><button class="btn" data-bar="Logo">Logo</button></div>
+            <h3>Status</h3>
+            <p id="log" class="muted"></p>
           </div>
         </div>
-        <div class="card">
-          <div class="card-h"><h2>Colors</h2></div>
-          <div class="swatches" id="swatches"></div>
-          <div class="row"><button class="btn" data-c="#ffffff">White</button><button class="btn" data-c="#7c3aed">Purple</button><button class="btn" data-c="#06b6d4">Blue</button><button class="btn" data-c="#22c55e">Green</button><button class="btn" data-c="#ef4444">Red</button><button class="btn" data-c="#000000">Off</button></div>
-          <h3>Status</h3>
-          <p id="log" class="muted"></p>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-effects" class="panel">
-      <div class="grid2">
+      <section id="tab-effects" class="panel">
+        <div class="page-h"><h1>Effects</h1><p>Animated looks that run on the keyboard.</p></div>
+        <div class="card"><div class="card-h"><h2>Choose</h2></div><div id="fx-grid" class="fx-grid"></div></div>
         <div class="card">
-          <div class="card-h"><h2>Effects</h2></div>
-          <label>Effect<select id="fx"></select></label>
-          <label>Speed<input type="range" id="fx-p1" min="1" max="5" value="3" /><span id="fx-p1-v">Medium</span></label>
-          <label>Direction<select id="fx-p2"><option value="0">Left to right</option><option value="4">Right to left</option><option value="2">Back to front</option><option value="6">Front to back</option></select></label>
-          <label>Style<input type="range" id="fx-p3" min="1" max="5" value="3" /><span id="fx-p3-v">Medium</span></label>
-          <div class="row"><label>Main color <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Background <input type="color" id="fx-c2" value="#000000" /></label></div>
+          <div class="card-h"><h2>Adjust</h2><span class="hint" id="fx-name">Wave</span></div>
+          <div id="fx-speed-row"><label class="fld">Speed<div class="seg" id="fx-speed-seg">
+            <button class="seg-btn" data-v="1">1</button><button class="seg-btn" data-v="2">2</button><button class="seg-btn active" data-v="3">3</button><button class="seg-btn" data-v="4">4</button><button class="seg-btn" data-v="5">5</button>
+          </div></label></div>
+          <div id="fx-dir-row"><label class="fld">Direction<div class="seg" id="fx-dir-seg">
+            <button class="seg-btn active" data-v="0">→</button><button class="seg-btn" data-v="4">←</button><button class="seg-btn" data-v="2">↓</button><button class="seg-btn" data-v="6">↑</button>
+          </div></label></div>
+          <div class="row" id="fx-colors"><label>Main <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Background <input type="color" id="fx-c2" value="#000000" /></label>
+          <label class="fld">Brightness<input type="range" id="fx-bright" min="20" max="255" value="255" /></label></div>
           <div class="row"><button id="btn-fx-apply" class="btn primary">Apply effect</button></div>
         </div>
-        <div class="card"><div class="card-h"><h2>About</h2></div><p class="muted">Effects run on the keyboard itself. To keep a look after unplugging, save it to a profile.</p></div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-profiles" class="panel">
-      <div class="grid2">
-        <div class="card"><div class="card-h"><h2>Profiles</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save to keyboard</button></div></div>
-        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Save to file</button><label class="btn ghost">Load from file<input type="file" id="file-import" accept=".json" hidden /></label></div><details><summary class="muted">Selected profile details</summary><textarea id="prof-json" rows="10" spellcheck="false"></textarea></details><div class="row"><button id="btn-apply-profile" class="btn primary">Apply to keyboard</button></div></div>
-      </div>
-    </section>
-
-    <section id="tab-macros" class="panel">
-      <div class="grid2">
-        <div class="card"><div class="card-h"><h2>Macros</h2></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Shortcut key, e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div><p class="muted">Macros replay key presses from a single key.</p></div>
-        <div class="card"><div class="card-h"><h2>Edit macro</h2></div><input id="m-name" placeholder="Name" /><label>Type what it should type<input id="m-text" placeholder="Hello world" /></label><div class="row"><button id="btn-m-type" class="btn">Use typed text</button></div><details><summary class="muted">Fine-tune steps</summary><label>Steps<textarea id="m-events" rows="8" placeholder="a down&#10;a up"></textarea></label></details><div class="row"><button id="btn-m-save" class="btn primary">Save</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label></div></div>
-      </div>
-    </section>
-
-    <section id="tab-device" class="panel">
-      <div class="grid2">
-        <div class="card">
-          <div class="card-h"><h2>Connection</h2><button id="btn-scan" class="btn">Check again</button></div>
-          <div id="devs"></div>
-          <p class="muted" id="dev-hint">Plug in your keyboard with USB, close the Cooler Master app if you have it open, then check again.</p>
-          <div class="row"><button id="btn-debug" class="btn ghost">Show details</button><button id="btn-copy-debug" class="btn ghost">Copy details</button></div>
-          <pre id="debug" class="log" style="display:none"></pre>
+      <section id="tab-profiles" class="panel">
+        <div class="page-h"><h1>Profiles</h1><p>Five slots stored on the keyboard.</p></div>
+        <div class="grid2">
+          <div class="card"><div class="card-h"><h2>On keyboard</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save current</button></div></div>
+          <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Save to file</button><label class="btn ghost">Load from file<input type="file" id="file-import" accept=".json" hidden /></label></div><details><summary class="muted">Selected profile details</summary><textarea id="prof-json" rows="10" spellcheck="false"></textarea></details><div class="row"><button id="btn-apply-profile" class="btn primary">Apply to keyboard</button></div></div>
         </div>
-        <div class="card">
-          <div class="card-h"><h2>Help</h2></div>
-          <p class="muted">If the keyboard is not found:</p>
-          <p class="muted">1. Use the USB cable that came with it, try another port.<br/>2. Close Portal or other lighting apps.<br/>3. On Windows, open Device Manager, find your keyboard, and confirm it is connected.</p>
-          <details><summary class="muted">Advanced</summary><p class="muted">Linux needs one setup step documented in the README. Some models need their exact version added before they are recognized — copy the details above when asking for help.</p></details>
+      </section>
+
+      <section id="tab-macros" class="panel">
+        <div class="page-h"><h1>Macros</h1><p>One key that types for you.</p></div>
+        <div class="grid2">
+          <div class="card"><div class="card-h"><h2>All macros</h2></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Key, e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div></div>
+          <div class="card"><div class="card-h"><h2>Edit</h2></div><input id="m-name" placeholder="Name" /><label class="fld">Type what it should type<input id="m-text" placeholder="Hello world" /></label><div class="row"><button id="btn-m-type" class="btn">Use typed text</button></div><details><summary class="muted">Fine-tune steps</summary><textarea id="m-events" rows="8"></textarea></details><div class="row"><button id="btn-m-save" class="btn primary">Save</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label></div></div>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
+
+      <section id="tab-device" class="panel">
+        <div class="page-h"><h1>Settings</h1><p>Connection and help.</p></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h"><h2>Keyboard</h2><button id="btn-scan" class="btn">Check again</button></div>
+            <div id="devs"></div>
+            <p class="muted">Use the cable that came with it and close the Cooler Master app if you have it open.</p>
+            <div class="row"><button id="btn-debug" class="btn ghost">Show details</button><button id="btn-copy-debug" class="btn ghost">Copy details</button></div>
+            <pre id="debug" class="log" style="display:none"></pre>
+          </div>
+          <div class="card"><div class="card-h"><h2>Help</h2></div>
+            <p class="muted">If the keyboard is not found, try another USB port, then check again.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <footer id="statusbar"><span id="status">Starting…</span><span id="ver">v0.1.0</span></footer>
 </div>
