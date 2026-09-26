@@ -20,7 +20,7 @@ impl Default for Profile {
         Self {
             id: 0,
             name: "P1".to_string(),
-            effect_id: 0x04,
+            effect_id: crate::proto::v2::WAVE,
             params: EffectParams::default(),
             colormap: vec![[124, 58, 237]; 128],
             brightness: 100,

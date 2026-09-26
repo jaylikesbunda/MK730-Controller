@@ -107,11 +107,12 @@ $("#btn-fill").onclick = async()=>{
 };
 $("#btn-clear").onclick = async()=>{ await invoke("set_full_color",{r:0,g:0,b:0}); state.colors={}; loadKeys(); refreshStatus(); };
 $("#btn-apply-map").onclick = async()=>{
-  const arr = state.keys.filter(k=>k.id<128).map(k=>{
-    const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(state.colors[k.id]||"rgb(0,0,0)");
-    return m?[+m[1],+m[2],+m[3]]:[0,0,0];
+  // 255-entry map indexed by firmware LED value (V2 direct mode).
+  const arr = Array.from({length:255},()=>[0,0,0]);
+  state.keys.forEach(k=>{
+    const m=/rgb\((\d+),(\d+),(\d+)\)/.exec(state.colors[k.id]||"");
+    if(m && k.id<255) arr[k.id]=[+m[1],+m[2],+m[3]];
   });
-  while(arr.length<128) arr.push([0,0,0]);
   await invoke("set_colormap",{colors:arr}); refreshStatus();
 };
 $$("#swatches") // placeholder
@@ -120,17 +121,19 @@ const sw=$("#swatches"); SW.forEach(c=>{ const d=document.createElement("div"); 
 $$("[data-c]").forEach(b=>b.onclick=()=>{ $("#pick").value=b.dataset.c; });
 $("#bright").oninput = e=>$("#bright-v").textContent=e.target.value+"%";
 
-// effects
-const FX=[[0,"Steady"],[1,"Breathing"],[2,"Color cycle"],[3,"Single key"],[4,"Wave"],[5,"Ripple"],[6,"Fade"],[7,"Rain"],[8,"Stars"],[9,"Snake"],[10,"Custom"],[224,"Layers"],[254,"Off"]];
-const fxSel=$("#fx"); FX.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===4)o.selected=true; fxSel.appendChild(o); });
-function speedLabel(v){ v=+v; if(v<=20) return "Fast"; if(v>=42) return "Slow"; return "Medium"; }
+// effects (V2 firmware values)
+const FX=[[1,"Custom paint"],[4,"Steady"],[5,"Breathing"],[6,"Color cycle"],[7,"Wave"],[8,"Ripple"],[9,"Crosshair"],[10,"Rain"],[11,"Stars"],[21,"Snow"],[20,"Fireball"],[19,"Heartbeat"],[23,"Water ripple"],[16,"Reactive fade"],[22,"Circle spectrum"],[13,"Customized"],[24,"Off"]];
+const fxSel=$("#fx"); FX.forEach(([v,l])=>{ const o=document.createElement("option"); o.value=v; o.textContent=l; if(v===7)o.selected=true; fxSel.appendChild(o); });
+function speedLabel(v){ v=+v; if(v<=2) return "Slow"; if(v>=4) return "Fast"; return "Medium"; }
 $("#fx-p1").oninput=e=>$("#fx-p1-v").textContent=speedLabel(e.target.value);
 $("#fx-p3").oninput=e=>$("#fx-p3-v").textContent=speedLabel(e.target.value);
 $("#btn-fx-apply").onclick=async()=>{
-  const eid=+fxSel.value, p1=+$("#fx-p1").value, p2=+$("#fx-p2").value, p3=+$("#fx-p3").value;
+  const eid=+fxSel.value;
+  const level=+$("#fx-p1").value <=5 ? +$("#fx-p1").value : 3;
+  const dir=+$("#fx-p2").value;
+  const brightness=255;
   const c1=parseColor($("#fx-c1").value), c2=parseColor($("#fx-c2").value);
-  await invoke("set_effect",{eid});
-  await invoke("set_effect_params",{p:{eid,p1,p2,p3,c1,c2}});
+  await invoke("set_effect_params",{p:{eid,level,brightness,dir,c1,c2}});
   refreshStatus();
 };
 
@@ -140,8 +143,9 @@ async function loadProfiles(){
   state.profiles = await invoke("get_profiles");
   const pl=$("#plist"); pl.innerHTML="";
   state.profiles.forEach(p=>{
+    const c=p.params?p.params.color1:{r:124,g:58,b:237};
     const d=document.createElement("div"); d.className="prof"+(p.id===state.activeProfile?" active":"");
-    d.innerHTML=`<strong>${p.name}</strong><span class="muted">${fxName(p.effect_id)}</span>`;
+    d.innerHTML=`<span class="dot" style="background:rgb(${c.r},${c.g},${c.b})"></span><strong>${p.name}</strong><span class="muted">${fxName(p.effect_id)}</span>`;
     const b=document.createElement("button"); b.className="btn"; b.textContent="Use";
     b.onclick=async()=>{ await invoke("set_active_profile",{id:p.id}); state.activeProfile=p.id; $("#prof-json").value=JSON.stringify(p,null,2); loadProfiles(); refreshStatus(); };
     d.appendChild(b); pl.appendChild(d);
@@ -166,7 +170,29 @@ async function loadMacros(){
     ml.appendChild(d);
   });
 }
-$("#btn-m-new").onclick=()=>{ const t=($("#m-trigger").value||"F5").toUpperCase(); state.selMacro=null; $("#m-name").value="Macro "+t; $("#m-events").value="0x04 down 0\n0x04 up 120"; };
+$("#btn-m-new").onclick=()=>{ const t=($("#m-trigger").value||"F5").toUpperCase(); state.selMacro=null; $("#m-name").value="Macro "+t; $("#m-text").value=""; $("#m-events").value="0x04 down 0\n0x04 up 120"; };
+function textToEvents(text){
+  const ev=[]; let t=0;
+  for(const ch of text){
+    let hid=0, mod=0;
+    if(ch>="a"&&ch<="z") hid=ch.charCodeAt(0)-93;
+    else if(ch>="A"&&ch<="Z"){ hid=ch.charCodeAt(0)-61; mod=2; }
+    else if(ch>="1"&&ch<="9") hid=ch.charCodeAt(0)-19;
+    else if(ch==="0") hid=39;
+    else if(ch===" ") hid=44;
+    else if(ch==="\n") hid=40;
+    else if(ch==="-") hid=45;
+    else continue;
+    ev.push({hid,pressed:true,delay_ms:t===0?0:60,modifier:mod});
+    ev.push({hid,pressed:false,delay_ms:60,modifier:0});
+    t++;
+  }
+  return ev;
+}
+const _bmt=$("#btn-m-type"); if(_bmt) _bmt.onclick=()=>{
+  const ev=textToEvents($("#m-text").value||"");
+  $("#m-events").value=ev.map(e=>`0x${e.hid.toString(16).padStart(2,"0")} ${e.pressed?"down":"up"} ${e.delay_ms}`).join("\n");
+};
 $("#btn-m-save").onclick=async()=>{
   const trigger=($("#m-trigger").value||"F5").toUpperCase();
   const lines=$("#m-events").value.split("\n").map(s=>s.trim()).filter(Boolean);

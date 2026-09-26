@@ -41,6 +41,8 @@ struct AppState {
     dev: Mutex<DeviceState>,
     profiles: Mutex<HashMap<u8, Profile>>,
     macros: Mutex<HashMap<String, Macro>>,
+    colors: Mutex<[[u8; 3]; 255]>,
+    initialized: Mutex<bool>,
 }
 
 fn push_log(state: &State<AppState>, msg: String) {
@@ -252,156 +254,160 @@ fn debug_usb(state: State<AppState>) -> UsbDebug {
     }
 }
 
-fn send_packet(state: &State<AppState>, pkt: &[u8; 64], label: &str) -> Result<String, CoreError> {
-    let hex = mk730_core::proto::hex(pkt);
-    let demo = state.dev.lock().demo;
-    if demo {
-        push_log(state, format!("{} [demo]: {}", label, &hex[..48.min(hex.len())]));
-        return Ok(hex);
-    }
-    // Real path: claim Interface 1 via rusb and interrupt-write to EP 0x04.
-    // Kept defensive: any failure returns a clear error, never panics.
-    match try_rusb_write(pkt) {
-        Ok(_) => {
-            push_log(state, format!("{} [usb]: {}", label, &hex[..48.min(hex.len())]));
-            Ok(hex)
+fn control_path() -> Option<String> {
+    let api = hidapi::HidApi::new().ok()?;
+    let mut fallback: Option<String> = None;
+    let mut best: Option<String> = None;
+    for dev in api.device_list() {
+        if !SUPPORTED_VIDS.contains(&dev.vendor_id()) {
+            continue;
         }
-        Err(e) => {
-            push_log(state, format!("{} FAILED: {}", label, e));
-            Err(CoreError::from(e))
+        let pid = dev.product_id();
+        let up = dev.usage_page();
+        let path = dev.path().to_bytes_with_nul();
+        let path = String::from_utf8_lossy(path).into_owned();
+        // Prefer MK730 on the vendor control collection.
+        if pid == 0x008F && up == 0xFF00 {
+            return Some(path);
+        }
+        if CANDIDATE_PIDS.contains(&pid) && up == 0xFF00 && best.is_none() {
+            best = Some(path.clone());
+        }
+        if fallback.is_none() {
+            fallback = Some(path);
         }
     }
+    best.or(fallback)
 }
 
-fn try_rusb_write(pkt: &[u8; 64]) -> Result<(), String> {
-    let ctx = rusb::Context::new().map_err(|e| format!("rusb ctx: {}", e))?;
-    let list = ctx.devices().map_err(|e| format!("rusb list: {}", e))?;
-    // Prefer known PIDs first, then any CM VID device (MK730 PIDs vary).
-    let mut cands: Vec<rusb::Device<rusb::Context>> = Vec::new();
-    let mut others: Vec<rusb::Device<rusb::Context>> = Vec::new();
-    for handle in list.iter() {
-        if let Ok(desc) = handle.device_descriptor() {
-            if !SUPPORTED_VIDS.contains(&desc.vendor_id()) {
-                continue;
-            }
-            if CANDIDATE_PIDS.contains(&desc.product_id()) {
-                cands.push(handle);
-            } else {
-                others.push(handle);
-            }
+fn hid_send(state: &State<AppState>, payload: &[u8], label: &str) -> Result<String, CoreError> {
+    let short = mk730_core::proto::hexv(payload);
+    if state.dev.lock().demo {
+        push_log(state, format!("{} [preview]: {}", label, short));
+        return Ok(short);
+    }
+    let path = control_path().ok_or_else(|| {
+        CoreError::from("keyboard control interface not found — check cable and close other lighting apps")
+    })?;
+    let api = hidapi::HidApi::new().map_err(|e| CoreError::from(format!("hid init: {}", e)))?;
+    let cpath = std::ffi::CString::new(path.trim_matches('"').trim_matches('\0'))
+        .map_err(|e| CoreError::from(format!("bad device path: {}", e)))?;
+    let dev = api
+        .open_path(&cpath)
+        .map_err(|e| CoreError::from(format!("open keyboard: {} (close Portal / other apps)", e)))?;
+    let mut report = [0u8; 65];
+    let n = payload.len().min(64);
+    report[1..1 + n].copy_from_slice(&payload[..n]);
+    dev.write(&report)
+        .map_err(|e| CoreError::from(format!("write failed: {}", e)))?;
+    // Response is best-effort; some commands are write-only on this firmware.
+    let mut resp = [0u8; 65];
+    let _ = dev.read_timeout(&mut resp, 400);
+    push_log(state, format!("{} : {}", label, short));
+    Ok(short)
+}
+
+fn v2_ensure_init(state: &State<AppState>) {
+    if state.initialized.lock().clone() || state.dev.lock().demo {
+        return;
+    }
+    for p in mk730_core::proto::v2::init_mk730() {
+        if hid_send(state, &p, "init").is_err() {
+            return;
         }
     }
-    cands.extend(others);
-    let mut last_err = "no USB device with VID 2516 found — check cable, Device Manager Hardware Ids for VID_2516".to_string();
-    for handle in cands {
-        let desc = handle.device_descriptor().map_err(|e| format!("desc: {}", e))?;
-        let h = handle.open().map_err(|e| {
-            format!(
-                "open {:04x}: {} (Windows: close Portal/RGB apps; Linux: udev rules)",
-                desc.product_id(),
-                e
-            )
-        })?;
-        // Detach kernel driver on Interface 1 only (Linux). Never touch IF 0 (typing).
-        #[cfg(target_os = "linux")]
-        {
-            if h.kernel_driver_active(1).unwrap_or(false) {
-                let _ = h.detach_kernel_driver(1);
-            }
-        }
-        if let Err(e) = h.claim_interface(1) {
-            last_err = format!(
-                "claim IF1 on {:04x}: {} (Windows: bind IF1 to WinUSB via Zadig, keep IF0 HID; Linux: udev rules)",
-                desc.product_id(),
-                e
-            );
-            continue;
-        }
-        // EP 0x04 OUT, 1000ms timeout
-        let n = h.write_interrupt(0x04, pkt, std::time::Duration::from_millis(1000))
-            .map_err(|e| format!("write_interrupt 0x04: {}", e))?;
-        h.release_interface(1).ok();
-        if n != 64 {
-            last_err = format!("short write {}", n);
-            continue;
-        }
-        return Ok(());
+    let _ = hid_send(state, &mk730_core::proto::v2::set_led_control(true), "paint mode");
+    *state.initialized.lock() = true;
+}
+
+fn v2_push_map(state: &State<AppState>) -> Result<String, CoreError> {
+    v2_ensure_init(state);
+    let map = *state.colors.lock();
+    let pkts = mk730_core::proto::v2::direct_packets(&map);
+    let mut last = String::new();
+    for (i, p) in pkts.iter().enumerate() {
+        last = hid_send(state, p, &format!("paint [{}/{}]", i + 1, pkts.len()))?;
     }
-    Err(last_err)
+    Ok(last)
 }
 
 #[tauri::command]
 fn set_mode(state: State<AppState>, mode: u8) -> Result<String, CoreError> {
-    let m = match mode {
-        0x00 => mk730_core::proto::ControlMode::Firmware,
-        0x01 => mk730_core::proto::ControlMode::Effect,
-        0x02 => mk730_core::proto::ControlMode::Manual,
-        0x03 => mk730_core::proto::ControlMode::Profile,
-        _ => return Err(CoreError::from("mode must be 0..3")),
+    let payload: Vec<u8> = match mode {
+        0x00 => vec![0x41, 0x00],
+        0x01 => vec![0x41, 0x80],
+        0x02 => vec![0x41, 0x05],
+        0x03 => vec![0x41, 0x05],
+        _ => return Err(CoreError::from("unknown mode")),
     };
-    let pkt = mk730_core::proto::build_set_mode(m);
-    let h = send_packet(&state, &pkt, &format!("41 {:02x}", mode))?;
+    let h = hid_send(&state, &payload, "mode")?;
     state.dev.lock().mode = mode;
     Ok(h)
 }
 
 #[tauri::command]
 fn set_full_color(state: State<AppState>, r: u8, g: u8, b: u8) -> Result<String, CoreError> {
-    // ensure manual mode first (best-effort, ignore error in demo)
-    let _ = set_mode(state.clone(), 0x02);
-    let pkt = mk730_core::proto::build_manual_full_color(r, g, b);
-    send_packet(&state, &pkt, "c0 00 full")
+    *state.colors.lock() = [[r, g, b]; 255];
+    v2_push_map(&state)
 }
 
 #[tauri::command]
-fn set_key_color(state: State<AppState>, id: u8, r: u8, g: u8, b: u8) -> Result<String, CoreError> {
-    let _ = set_mode(state.clone(), 0x02);
-    let pkt = mk730_core::proto::build_manual_key(id, r, g, b);
-    send_packet(&state, &pkt, "c0 01 key")
+fn set_key_color(state: State<AppState>, id: u16, r: u8, g: u8, b: u8) -> Result<String, CoreError> {
+    // Single-key paint updates the cached map, then pushes the FULL map —
+    // V2 firmware has no single-LED command, which is why per-key felt broken.
+    {
+        let mut map = state.colors.lock();
+        if (id as usize) < 255 {
+            map[id as usize] = [r, g, b];
+        }
+    }
+    v2_push_map(&state)
 }
 
 #[tauri::command]
 fn set_colormap(state: State<AppState>, colors: Vec<[u8; 3]>) -> Result<String, CoreError> {
-    let _ = set_mode(state.clone(), 0x02);
-    let pkts = mk730_core::proto::build_colormap_packets(&colors, true);
-    let mut last = String::new();
-    for (i, p) in pkts.iter().enumerate() {
-        last = send_packet(&state, p, &format!("c0 02 [{}/8]", i + 1))?;
+    // colors[i] = LED value i (255 entries). Frontend builds this from the
+    // keymap so clicks land on the right physical key.
+    {
+        let mut map = state.colors.lock();
+        for (i, c) in colors.iter().take(255).enumerate() {
+            map[i] = *c;
+        }
     }
-    Ok(last)
+    v2_push_map(&state)
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct EffectParamsIn {
     eid: u8,
-    p1: u8,
-    p2: u8,
-    p3: u8,
+    level: u8,
+    brightness: u8,
+    dir: u8,
     c1: [u8; 3],
     c2: [u8; 3],
 }
 
 #[tauri::command]
 fn set_effect(state: State<AppState>, eid: u8) -> Result<String, CoreError> {
-    let _ = set_mode(state.clone(), 0x01);
-    let pkt = mk730_core::proto::build_set_effect(eid);
-    send_packet(&state, &pkt, "51 28 effect")
+    v2_ensure_init(&state);
+    let seq = mk730_core::proto::v2::effect_sequence(eid, 3, 255, 0x00, [124, 58, 237], [0, 0, 0]);
+    let mut last = String::new();
+    for p in seq.iter() {
+        last = hid_send(&state, p, "effect")?;
+    }
+    Ok(last)
 }
 
 #[tauri::command]
 fn set_effect_params(state: State<AppState>, p: EffectParamsIn) -> Result<String, CoreError> {
-    let _ = set_mode(state.clone(), 0x01);
-    let params = mk730_core::proto::EffectParams {
-        p1_speed: p.p1,
-        p2: p.p2,
-        p3: p.p3,
-        color1: mk730_core::proto::Rgb::new(p.c1[0], p.c1[1], p.c1[2]),
-        color2: mk730_core::proto::Rgb::new(p.c2[0], p.c2[1], p.c2[2]),
-        multilayer: 0x00,
-    };
-    let pkt = mk730_core::proto::build_set_effect_params(p.eid, &params);
-    let h = send_packet(&state, &pkt, "51 2c params")?;
-    Ok(h)
+    v2_ensure_init(&state);
+    let level = p.level.clamp(1, 5);
+    let seq = mk730_core::proto::v2::effect_sequence(p.eid, level, p.brightness, p.dir, p.c1, p.c2);
+    let mut last = String::new();
+    for pkt in seq.iter() {
+        last = hid_send(&state, pkt, "effect")?;
+    }
+    Ok(last)
 }
 
 #[tauri::command]
@@ -409,18 +415,14 @@ fn set_active_profile(state: State<AppState>, id: u8) -> Result<String, CoreErro
     if id > 4 {
         return Err(CoreError::from("profile id 0..4"));
     }
-    let _ = set_mode(state.clone(), 0x03);
-    let pkt = mk730_core::proto::build_set_active_profile(id);
-    let h = send_packet(&state, &pkt, "51 00 profile")?;
+    let h = hid_send(&state, &[0x51, 0x00, 0x00, 0x00, id], "profile")?;
     state.dev.lock().active_profile = id;
-    let _ = set_mode(state.clone(), 0x01);
     Ok(h)
 }
 
 #[tauri::command]
 fn save_profile_fw(state: State<AppState>) -> Result<String, CoreError> {
-    let pkt = mk730_core::proto::build_save_profile();
-    send_packet(&state, &pkt, "50 55 save")
+    hid_send(&state, &[0x50, 0x55], "save")
 }
 
 #[tauri::command]
@@ -481,29 +483,20 @@ fn apply_profile_to_device(
     state: State<AppState>,
     p: Profile,
 ) -> Result<String, CoreError> {
-    // Sequence mirrors Portal: profile mode -> effect+params+colormap -> save -> effect mode
-    let _ = set_mode(state.clone(), 0x03);
-    let _ = send_packet(
-        &state,
-        &mk730_core::proto::build_set_active_profile(p.id),
-        "apply profile id",
-    )?;
-    let _ = send_packet(
-        &state,
-        &mk730_core::proto::build_set_effect(p.effect_id),
-        "apply effect",
-    )?;
-    let _ = send_packet(
-        &state,
-        &mk730_core::proto::build_set_effect_params(p.effect_id, &p.params),
-        "apply params",
-    )?;
-    let col = mk730_core::proto::build_colormap_packets(&p.colormap, false);
-    for (i, pkt) in col.iter().enumerate() {
-        let _ = send_packet(&state, pkt, &format!("51 a8 [{}/8]", i + 1))?;
+    // V2: select profile, push effect sequence, save.
+    v2_ensure_init(&state);
+    hid_send(&state, &[0x51, 0x00, 0x00, 0x00, p.id], "profile")?;
+    let level = 3u8;
+    let seq = mk730_core::proto::v2::effect_sequence(
+        p.effect_id, level, 255, 0x00,
+        [p.params.color1.r, p.params.color1.g, p.params.color1.b],
+        [p.params.color2.r, p.params.color2.g, p.params.color2.b],
+    );
+    let mut h = String::new();
+    for pkt in seq.iter() {
+        h = hid_send(&state, pkt, "profile effect")?;
     }
-    let h = save_profile_fw(state.clone())?;
-    let _ = set_mode(state.clone(), 0x01);
+    hid_send(&state, &[0x50, 0x55], "save")?;
     state.profiles.lock().insert(p.id, p);
     Ok(h)
 }
@@ -538,6 +531,8 @@ pub fn run() {
             dev: Mutex::new(DeviceState::default()),
             profiles: Mutex::new(pmap),
             macros: Mutex::new(HashMap::new()),
+            colors: Mutex::new([[0u8; 3]; 255]),
+            initialized: Mutex::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_status,

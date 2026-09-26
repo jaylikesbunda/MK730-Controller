@@ -105,6 +105,10 @@ code{background:#0b0f16;border:1px solid var(--line);border-radius:6px;padding:1
 #plist,.mlist{display:flex;flex-direction:column;gap:8px}
 .prof,.mac{border:1px solid var(--line);border-radius:12px;padding:10px;background:#121724;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .prof.active{border-color:var(--acc)}
+.dot{width:14px;height:14px;border-radius:99px;border:1px solid #ffffff22;flex:none}
+details{margin-top:10px}
+details summary{cursor:pointer;list-style:none}
+details summary::-webkit-details-marker{display:none}
 #statusbar{display:flex;justify-content:space-between;padding:9px 14px;border-top:1px solid var(--line);color:var(--mut);font-size:12px}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#2a3348;border-radius:99px;border:2px solid #0f1115}

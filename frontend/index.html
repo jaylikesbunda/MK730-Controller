@@ -62,9 +62,9 @@
         <div class="card">
           <div class="card-h"><h2>Effects</h2></div>
           <label>Effect<select id="fx"></select></label>
-          <label>Speed<input type="range" id="fx-p1" min="10" max="50" value="32" /><span id="fx-p1-v">Medium</span></label>
-          <label>Direction<select id="fx-p2"><option value="0">Left to right</option><option value="2">Back to front</option><option value="4">Right to left</option><option value="6">Front to back</option><option value="128">Random colors</option></select></label>
-          <label>Amount<input type="range" id="fx-p3" min="10" max="50" value="32" /><span id="fx-p3-v">Medium</span></label>
+          <label>Speed<input type="range" id="fx-p1" min="1" max="5" value="3" /><span id="fx-p1-v">Medium</span></label>
+          <label>Direction<select id="fx-p2"><option value="0">Left to right</option><option value="4">Right to left</option><option value="2">Back to front</option><option value="6">Front to back</option></select></label>
+          <label>Style<input type="range" id="fx-p3" min="1" max="5" value="3" /><span id="fx-p3-v">Medium</span></label>
           <div class="row"><label>Main color <input type="color" id="fx-c1" value="#7c3aed" /></label><label>Background <input type="color" id="fx-c2" value="#000000" /></label></div>
           <div class="row"><button id="btn-fx-apply" class="btn primary">Apply effect</button></div>
         </div>
@@ -75,14 +75,14 @@
     <section id="tab-profiles" class="panel">
       <div class="grid2">
         <div class="card"><div class="card-h"><h2>Profiles</h2><button id="btn-prof-refresh" class="btn ghost">Refresh</button></div><div id="plist"></div><div class="row"><button id="btn-save-fw" class="btn primary">Save to keyboard</button></div></div>
-        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Save to file</button><label class="btn ghost">Load from file<input type="file" id="file-import" accept=".json" hidden /></label></div><textarea id="prof-json" rows="14" spellcheck="false"></textarea><div class="row"><button id="btn-apply-profile" class="btn primary">Apply to keyboard</button></div></div>
+        <div class="card"><div class="card-h"><h2>Backup</h2></div><div class="row"><button id="btn-export" class="btn">Save to file</button><label class="btn ghost">Load from file<input type="file" id="file-import" accept=".json" hidden /></label></div><details><summary class="muted">Selected profile details</summary><textarea id="prof-json" rows="10" spellcheck="false"></textarea></details><div class="row"><button id="btn-apply-profile" class="btn primary">Apply to keyboard</button></div></div>
       </div>
     </section>
 
     <section id="tab-macros" class="panel">
       <div class="grid2">
         <div class="card"><div class="card-h"><h2>Macros</h2></div><div id="mlist"></div><div class="row"><input id="m-trigger" placeholder="Shortcut key, e.g. F5" /><button id="btn-m-new" class="btn primary">New</button></div><p class="muted">Macros replay key presses from a single key.</p></div>
-        <div class="card"><div class="card-h"><h2>Edit macro</h2></div><input id="m-name" placeholder="Name" /><label>Key presses<textarea id="m-events" rows="10" placeholder="a down&#10;a up"></textarea></label><div class="row"><button id="btn-m-save" class="btn primary">Save</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label></div></div>
+        <div class="card"><div class="card-h"><h2>Edit macro</h2></div><input id="m-name" placeholder="Name" /><label>Type what it should type<input id="m-text" placeholder="Hello world" /></label><div class="row"><button id="btn-m-type" class="btn">Use typed text</button></div><details><summary class="muted">Fine-tune steps</summary><label>Steps<textarea id="m-events" rows="8" placeholder="a down&#10;a up"></textarea></label></details><div class="row"><button id="btn-m-save" class="btn primary">Save</button><button id="btn-m-del" class="btn ghost">Delete</button></div><div class="row small"><label>Repeat <input id="m-repeat" type="number" min="0" max="255" value="0" /></label></div></div>
       </div>
     </section>
 

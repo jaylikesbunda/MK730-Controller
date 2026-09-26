@@ -14,7 +14,7 @@ pub mod transport;
 pub use keymap::{KeyDef, default_mk730_tkl};
 pub use macros::{Macro, MacroEvent};
 pub use profiles::Profile;
-pub use proto::{EffectId, EffectParams, WaveDirection};
+pub use proto::{v2, EffectId, EffectParams, WaveDirection};
 pub use transport::{DeviceInfo, TransportKind};
 
 /// Known Cooler Master USB vendor ID (OpenRGB: COOLERMASTER_VID).
