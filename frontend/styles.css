@@ -12,16 +12,18 @@
   --r:16px;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
+html{background:transparent}
+html,body{height:100%;background:transparent}
 body{
-  margin:0;background:var(--bg);color:var(--txt);
+  margin:0;background:transparent;color:var(--txt);
   font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif;
   overflow:hidden;
 }
 #window{
   height:100vh;margin:0;
-  background:linear-gradient(180deg,#12151c,#0f1115);
-  border:none;border-radius:14px;
+  background:#0f1115;
+  background-clip:padding-box;
+  border:none;outline:none;border-radius:14px;
   display:flex;flex-direction:column;overflow:hidden;
 }
 #titlebar{

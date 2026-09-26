@@ -280,12 +280,16 @@ fn control_path() -> Option<String> {
     best.or(fallback)
 }
 
-fn hid_send(state: &State<AppState>, payload: &[u8], label: &str) -> Result<String, CoreError> {
-    let short = mk730_core::proto::hexv(payload);
+fn hid_send_many(state: &State<AppState>, payloads: &[Vec<u8>], label: &str) -> Result<String, CoreError> {
+    let short = payloads
+        .first()
+        .map(|p| mk730_core::proto::hexv(p))
+        .unwrap_or_default();
     if state.dev.lock().demo {
         push_log(state, format!("{} [preview]: {}", label, short));
         return Ok(short);
     }
+    // Open once per batch — opening per packet was the main paint lag.
     let path = control_path().ok_or_else(|| {
         CoreError::from("keyboard control interface not found — check cable and close other lighting apps")
     })?;
@@ -295,40 +299,41 @@ fn hid_send(state: &State<AppState>, payload: &[u8], label: &str) -> Result<Stri
     let dev = api
         .open_path(&cpath)
         .map_err(|e| CoreError::from(format!("open keyboard: {} (close Portal / other apps)", e)))?;
-    let mut report = [0u8; 65];
-    let n = payload.len().min(64);
-    report[1..1 + n].copy_from_slice(&payload[..n]);
-    dev.write(&report)
-        .map_err(|e| CoreError::from(format!("write failed: {}", e)))?;
-    // Response is best-effort; keep the wait short so painting stays fluid.
-    let mut resp = [0u8; 65];
-    let _ = dev.read_timeout(&mut resp, 60);
-    push_log(state, format!("{} : {}", label, short));
-    Ok(short)
+    let mut last = short.clone();
+    for p in payloads {
+        let mut report = [0u8; 65];
+        let n = p.len().min(64);
+        report[1..1 + n].copy_from_slice(&p[..n]);
+        dev.write(&report)
+            .map_err(|e| CoreError::from(format!("write failed: {}", e)))?;
+        let mut resp = [0u8; 65];
+        let _ = dev.read_timeout(&mut resp, 25);
+        last = mk730_core::proto::hexv(p);
+    }
+    push_log(state, format!("{} ({} packets)", label, payloads.len()));
+    Ok(last)
+}
+
+fn hid_send(state: &State<AppState>, payload: &[u8], label: &str) -> Result<String, CoreError> {
+    hid_send_many(state, &[payload.to_vec()], label)
 }
 
 fn v2_ensure_init(state: &State<AppState>) {
     if state.initialized.lock().clone() || state.dev.lock().demo {
         return;
     }
-    for p in mk730_core::proto::v2::init_mk730() {
-        if hid_send(state, &p, "init").is_err() {
-            return;
-        }
+    let mut init = mk730_core::proto::v2::init_mk730();
+    init.push(mk730_core::proto::v2::set_led_control(true));
+    if hid_send_many(state, &init, "init").is_ok() {
+        *state.initialized.lock() = true;
     }
-    let _ = hid_send(state, &mk730_core::proto::v2::set_led_control(true), "paint mode");
-    *state.initialized.lock() = true;
 }
 
 fn v2_push_map(state: &State<AppState>) -> Result<String, CoreError> {
     v2_ensure_init(state);
     let map = *state.colors.lock();
     let pkts = mk730_core::proto::v2::direct_packets(&map);
-    let mut last = String::new();
-    for (i, p) in pkts.iter().enumerate() {
-        last = hid_send(state, p, &format!("paint [{}/{}]", i + 1, pkts.len()))?;
-    }
-    Ok(last)
+    hid_send_many(state, &pkts, "paint")
 }
 
 #[tauri::command]
